@@ -1,0 +1,29 @@
+# Ignore VS Code and PyCharm settings
+.vscode/
+.idea/
+
+# Ignore Python virtual environments and compiled files
+venv/
+__pycache__/
+*.pyc
+
+# Ignore logs and cache files
+logs/
+*.log
+.cache/
+
+# Ignore Git-related files
+.git/
+
+# Ignore unnecessary folders
+tests/
+test_images/
+docs/
+credentials/
+dependencies/
+external_models/
+
+# Ignore SonarQube and Qodana settings
+.qodana/
+.qodana.yaml
+coverage/

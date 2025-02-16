@@ -1,0 +1,33 @@
+name: SonarCloud Analysis
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sonarcloud:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'  # Adjust this to match your Python version
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt || true  # Modify if needed
+
+      - name: Run SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          pip install sonar-scanner-cli
+          sonar-scanner \
+            -Dsonar.organization=MaceScott \
+            -Dsonar.projectKey=macescott \
+            -Dsonar.python.version=3.12  # Adjust to match your project
