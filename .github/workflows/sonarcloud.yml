@@ -22,12 +22,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt || true  # Modify if needed
 
+      - name: Install SonarCloud Scanner
+        run: |
+          wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.7.0.2747-linux.zip
+          unzip sonar-scanner.zip
+          mv sonar-scanner-4.7.0.2747-linux sonar-scanner
+          echo "$GITHUB_WORKSPACE/sonar-scanner/bin" >> $GITHUB_PATH
+
       - name: Run SonarCloud Analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          pip install sonar-scanner-cli
           sonar-scanner \
             -Dsonar.organization=MaceScott \
             -Dsonar.projectKey=macescott \
-            -Dsonar.python.version=3.12  # Adjust to match your project
+            -Dsonar.python.version=3.12
