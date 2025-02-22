@@ -1,87 +1,118 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from app.face_recognition.face_detection import detect_faces
-from app.face_recognition.face_encoding import encode_faces
-from app.face_recognition.face_matching import match_faces
-from pathlib import Path
+import os
+import logging
 import yaml
-import threading
-
-# Load configuration
-CONFIG_FILE = Path("config/config.yaml")
-if not CONFIG_FILE.exists():
-    messagebox.showerror("Error", f"Configuration file not found: {CONFIG_FILE}")
-    exit()
-
-try:
-    with open(CONFIG_FILE, "r") as f:
-        config = yaml.safe_load(f)
-    IMAGE_FOLDER = Path(config.get("IMAGE_FOLDER", ""))
-    if not IMAGE_FOLDER.exists():
-        raise ValueError(f"Invalid or missing 'IMAGE_FOLDER' in config.yaml: {IMAGE_FOLDER}")
-except Exception as e:
-    messagebox.showerror("Error", f"Failed to load configuration file: {e}")
-    exit()
+import argparse
+from tkinter import Tk
+from app.gui.base_frame import CernoIDApp
 
 
-class CernoIDApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("CernoID - Face Recognition System")
-        self.root.geometry("600x400")
+def load_config(config_path=None):
+    """
+    Loads the configuration file from the provided path, with error handling.
+    """
+    config_path = config_path or os.getenv("CONFIG_PATH", "config/config.yaml")
 
-        # UI components
-        self.create_widgets()
+    try:
+        with open(config_path, "r") as file:
+            config = yaml.safe_load(file)
+        logging.info(f"Configuration file loaded from: {config_path}")
+        return config
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found at: {config_path}")
+        raise
+    except yaml.YAMLError as e:
+        logging.error(f"Error parsing the YAML configuration file: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error while loading configuration: {e}")
+        raise
 
-    def create_widgets(self):
-        # Heading
-        tk.Label(self.root, text="CernoID - Face Recognition", font=("Arial", 16, "bold")).pack(pady=10)
 
-        # Instruction Label
-        tk.Label(self.root, text=f"Images will be processed from: {IMAGE_FOLDER}", font=("Arial", 12)).pack(pady=5)
+def configure_logging(log_path):
+    """
+    Configures logging for the application and ensures the log directory exists.
+    """
+    try:
+        log_dir = os.path.dirname(log_path)
+        if log_dir:  # Only create if a directory path is provided
+            os.makedirs(log_dir, exist_ok=True)
 
-        # Detect Faces Button
-        self.detect_faces_button = tk.Button(self.root, text="Detect Faces", command=self.threaded_detect_faces)
-        self.detect_faces_button.pack(pady=10)
+        # Setup logging configuration
+        logging.basicConfig(
+            filename=log_path,
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+        )
+        logging.info("Logging configuration completed.")
+    except Exception as e:
+        logging.error(f"Error setting up logging: {e}")
+        raise
 
-        # Encode Face Button
-        self.encode_faces_button = tk.Button(self.root, text="Encode Faces", command=self.threaded_encode_faces)
-        self.encode_faces_button.pack(pady=10)
 
-        # Match Faces Button
-        self.match_faces_button = tk.Button(self.root, text="Match Faces", command=self.threaded_match_faces)
-        self.match_faces_button.pack(pady=10)
+def validate_config(config):
+    """
+    Validates the configuration file to ensure all required settings exist and are valid.
+    """
+    required_keys = [
+        "BASE_DIR", "SHAPE_PREDICTOR_PATH", "FACE_RECOGNIZER_PATH",
+        "IMAGE_FOLDER", "LOGS_PATH", "DATABASE_CONFIG"
+    ]
 
-        # Exit Button
-        tk.Button(self.root, text="Exit", command=self.root.quit).pack(pady=20)
+    for key in required_keys:
+        if key not in config:
+            logging.error(f"Missing required key in configuration: {key}")
+            raise KeyError(f"Configuration file is missing required key: {key}")
 
-    # Threaded helpers to keep the UI responsive
-    def threaded_detect_faces(self):
-        threading.Thread(target=self.detect_faces, daemon=True).start()
+    # Validate paths
+    if not os.path.exists(config.get("BASE_DIR", "")):
+        logging.error(f"'BASE_DIR' does not exist: {config['BASE_DIR']}")
+        raise FileNotFoundError(f"'BASE_DIR' does not exist: {config['BASE_DIR']}")
 
-    def threaded_encode_faces(self):
-        threading.Thread(target=self.encode_faces, daemon=True).start()
+    if not os.path.exists(config.get("IMAGE_FOLDER", "")):
+        logging.error(f"Image folder not found: {config['IMAGE_FOLDER']}")
+        raise FileNotFoundError(f"Image folder not found: {config['IMAGE_FOLDER']}")
 
-    def threaded_match_faces(self):
-        threading.Thread(target=self.match_faces, daemon=True).start()
+    logging.info("Configuration validation passed successfully.")
 
-    # Core functionalities
-    def detect_faces(self):
-        # Logic for face detection
-        pass
 
-    def encode_faces(self):
-        # Logic for face encoding
-        pass
+def main():
+    """
+    Primary entry point for the CernoID application.
+    """
+    parser = argparse.ArgumentParser(description="Run the CernoID Application.")
+    parser.add_argument(
+        "--config-path",
+        type=str,
+        help="Path to the configuration file.",
+        default="config/config.yaml"
+    )
+    args = parser.parse_args()
 
-    def match_faces(self):
-        # Logic for face matching
-        pass
+    try:
+        # Load configuration
+        config = load_config(config_path=args.config_path)
+
+        # Validate the configuration
+        validate_config(config)
+
+        # Extract relevant configuration variables
+        image_folder = config["IMAGE_FOLDER"]
+        logs_path = config["LOGS_PATH"]
+
+        # Configure logging system
+        configure_logging(logs_path)
+
+        # Initialize the application and start the GUI
+        root = Tk()
+        app = CernoIDApp(root, image_folder=image_folder)
+
+        logging.info("Starting the application...")
+        root.mainloop()
+
+    except Exception as e:
+        logging.error(f"Application encountered a critical error: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = CernoIDApp(root)
-    root.mainloop()
-
-
+    main()

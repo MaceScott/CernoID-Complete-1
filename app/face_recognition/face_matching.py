@@ -49,6 +49,18 @@ def match_faces(image1_path, image2_path, threshold=0.6):
         return distance <= threshold
 
     except NoFacesDetectedError as e:
+        # Directly propagate this specific exception
         raise e
+    except ValueError as e:
+        # Handle invalid input values explicitly
+        raise ValueError(f"Invalid value encountered: {e}")
+    except FileNotFoundError as e:
+        # Handle missing file paths explicitly
+        raise FileNotFoundError(f"File not found error: {e}")
+    except ImportError as e:
+        # Handle errors related to importing modules
+        raise ImportError(f"An import error occurred: {e}")
     except Exception as e:
-        raise Exception(f"An unexpected error occurred: {e}")
+        # Catch any other unexpected exceptions
+        raise RuntimeError(f"An unexpected error occurred: {e}")
+

@@ -5,6 +5,10 @@ from face_encoding import encode_faces
 from face_matching import match_faces
 import threading
 
+# Constants
+IMAGE_TYPES = [("Image Files", "*.jpg *.jpeg *.png")]
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+
 
 class FaceUI(tk.Frame):
     def __init__(self, master=None):
@@ -35,18 +39,17 @@ class FaceUI(tk.Frame):
             messagebox.showerror("Error", "File does not exist. Please select a valid image file.")
             return False
 
-        if not filepath.lower().endswith((".jpg", ".jpeg", ".png")):
-            messagebox.showerror("Error", "Invalid file type. Please select an image file (JPG, PNG).")
+        if not filepath.lower().endswith(IMAGE_EXTENSIONS):
+            messagebox.showerror(
+                "Error", "Invalid file type. Please select an image file (JPG, PNG)."
+            )
             return False
 
         return True
 
     def initiate_encode_face(self):
         """Start the encode_face process in a separate thread."""
-        filepath = filedialog.askopenfilename(
-            title="Select Image",
-            filetypes=[("Image Files", "*.jpg *.jpeg *.png")]
-        )
+        filepath = filedialog.askopenfilename(title="Select Image", filetypes=IMAGE_TYPES)
         if self.validate_file_path(filepath):
             threading.Thread(target=self.encode_face, args=(filepath,), daemon=True).start()
 
@@ -67,17 +70,11 @@ class FaceUI(tk.Frame):
 
     def initiate_match_faces(self):
         """Start the match_faces process in a separate thread."""
-        img1_path = filedialog.askopenfilename(
-            title="Select First Image",
-            filetypes=[("Image Files", "*.jpg *.jpeg *.png")]
-        )
+        img1_path = filedialog.askopenfilename(title="Select First Image", filetypes=IMAGE_TYPES)
         if not self.validate_file_path(img1_path):
             return
 
-        img2_path = filedialog.askopenfilename(
-            title="Select Second Image",
-            filetypes=[("Image Files", "*.jpg *.jpeg *.png")]
-        )
+        img2_path = filedialog.askopenfilename(title="Select Second Image", filetypes=IMAGE_TYPES)
         if not self.validate_file_path(img2_path):
             return
 

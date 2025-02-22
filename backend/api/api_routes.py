@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 from app.face_recognition.face_matching import match_faces
 from app.face_recognition.face_encoding import encode_faces
 from config import IMAGE_FOLDER  # Ensure config.py exists and IMAGE_FOLDER is defined
+from fastapi import FastAPI, UploadFile
+import asyncio
+from typing import List
 
 # Load environment variables (from .env file if exists)
 load_dotenv()

@@ -1,4 +1,4 @@
-BASE_DIR: "CernoID-Complete"
+BASE_DIR: "C:/Users/maces/CernoID-Complete"
 SHAPE_PREDICTOR_PATH: "external_models/shape_predictor_68_face_landmarks.dat"
 FACE_RECOGNIZER_PATH: "external_models/dlib_face_recognition_resnet_model_v1.dat"
 
@@ -10,4 +10,4 @@ DATABASE_CONFIG:
 
 LOGS_PATH: "logs/app.log"
 
-IMAGE_FOLDER = "uploads" # Path to image directory
+IMAGE_FOLDER: "test_images"  # Path to image directory
