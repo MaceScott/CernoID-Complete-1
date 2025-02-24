@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cernoid-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Next.js
+      - "5000:5000"  # Python backend
+    environment:
+      - NODE_ENV=production
+      - PYTHON_ENV=production
+      - DATABASE_URL=postgresql://cernoid:cernoid@db:5432/cernoid
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - NEXT_PUBLIC_WS_URL=ws://localhost:5000/ws
+    volumes:
+      - ./logs:/app/logs
+      - ./face_encodings.pkl:/app/face_encodings.pkl
+    depends_on:
+      - db
+      - redis
+
+  nginx:
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+    container_name: cernoid-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+    volumes:
+      - ./logs/nginx:/var/log/nginx
+
+  db:
+    image: postgres:15-alpine
+    container_name: cernoid-db
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./logs/postgres:/var/log/postgresql
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:alpine
+    container_name: cernoid-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+      - ./logs/redis:/var/log/redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  cernoid_net:
+    driver: bridge 

@@ -3,9 +3,242 @@ import jwt
 import bcrypt
 from datetime import datetime, timedelta
 import uuid
-from fastapi import Request, HTTPException
+from fastapi import Request, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
 from ..base import BaseComponent
 from ..utils.errors import handle_errors
+from ...utils.config import get_settings
+from ...utils.logging import get_logger
+from ..database.service import DatabaseService
+from ..interfaces.security import AuditInterface
+
+class User(BaseModel):
+    """User model with role-based permissions."""
+    id: int
+    username: str
+    email: str
+    role: str
+    permissions: List[str]
+    is_active: bool
+    last_login: Optional[datetime]
+
+class AuthService:
+    """Advanced authentication service with RBAC"""
+    
+    def __init__(self, audit: AuditInterface):
+        self.settings = get_settings()
+        self.logger = get_logger(__name__)
+        self.db = DatabaseService()
+        self.audit = audit
+        
+        # Initialize security tools
+        self.pwd_context = CryptContext(
+            schemes=["bcrypt"],
+            deprecated="auto"
+        )
+        self.oauth2_scheme = OAuth2PasswordBearer(
+            tokenUrl="auth/login"
+        )
+        
+        # Initialize JWT settings
+        self.jwt_secret = self.settings.jwt_secret
+        self.jwt_algorithm = "HS256"
+        self.access_token_expire = timedelta(minutes=30)
+        self.refresh_token_expire = timedelta(days=7)
+        
+    async def authenticate_user(self,
+                              username: str,
+                              password: str
+                              ) -> Optional[User]:
+        """Authenticate user credentials."""
+        try:
+            # Get user from database
+            user_data = await self.db.get_user_by_username(username)
+            if not user_data:
+                return None
+                
+            # Verify password
+            if not self.verify_password(password, user_data["password"]):
+                return None
+                
+            # Update last login
+            await self.db.update_last_login(user_data["id"])
+            
+            # Create user object
+            user = User(**user_data)
+            
+            # Log authentication
+            await self.audit.log_event(
+                event_type="authentication",
+                user_id=user.id,
+                resource="auth",
+                action="login",
+                details={"username": username}
+            )
+            
+            return user
+            
+        except Exception as e:
+            self.logger.error(f"Authentication failed: {str(e)}")
+            raise
+            
+    def verify_password(self,
+                       plain_password: str,
+                       hashed_password: str) -> bool:
+        """Verify password against hash."""
+        return self.pwd_context.verify(plain_password, hashed_password)
+        
+    def create_password_hash(self, password: str) -> str:
+        """Create password hash."""
+        return self.pwd_context.hash(password)
+        
+    async def create_tokens(self,
+                          user: User
+                          ) -> Dict[str, str]:
+        """Create access and refresh tokens."""
+        try:
+            # Create access token
+            access_token_data = {
+                "sub": str(user.id),
+                "username": user.username,
+                "role": user.role,
+                "permissions": user.permissions,
+                "type": "access",
+                "exp": datetime.utcnow() + self.access_token_expire
+            }
+            
+            access_token = jwt.encode(
+                access_token_data,
+                self.jwt_secret,
+                algorithm=self.jwt_algorithm
+            )
+            
+            # Create refresh token
+            refresh_token_data = {
+                "sub": str(user.id),
+                "type": "refresh",
+                "exp": datetime.utcnow() + self.refresh_token_expire
+            }
+            
+            refresh_token = jwt.encode(
+                refresh_token_data,
+                self.jwt_secret,
+                algorithm=self.jwt_algorithm
+            )
+            
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Token creation failed: {str(e)}")
+            raise
+            
+    async def verify_token(self,
+                          token: str,
+                          token_type: str = "access"
+                          ) -> Dict[str, Any]:
+        """Verify JWT token."""
+        try:
+            # Decode token
+            payload = jwt.decode(
+                token,
+                self.jwt_secret,
+                algorithms=[self.jwt_algorithm]
+            )
+            
+            # Verify token type
+            if payload.get("type") != token_type:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type"
+                )
+                
+            return payload
+            
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired"
+            )
+        except jwt.JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
+            
+    async def refresh_access_token(self,
+                                 refresh_token: str
+                                 ) -> Dict[str, str]:
+        """Refresh access token using refresh token."""
+        try:
+            # Verify refresh token
+            payload = await self.verify_token(refresh_token, "refresh")
+            
+            # Get user
+            user_data = await self.db.get_user_by_id(int(payload["sub"]))
+            user = User(**user_data)
+            
+            # Create new access token
+            access_token_data = {
+                "sub": str(user.id),
+                "username": user.username,
+                "role": user.role,
+                "permissions": user.permissions,
+                "type": "access",
+                "exp": datetime.utcnow() + self.access_token_expire
+            }
+            
+            access_token = jwt.encode(
+                access_token_data,
+                self.jwt_secret,
+                algorithm=self.jwt_algorithm
+            )
+            
+            return {
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Token refresh failed: {str(e)}")
+            raise
+            
+    async def check_permission(self,
+                             user: User,
+                             required_permission: str) -> bool:
+        """Check if user has required permission."""
+        return required_permission in user.permissions
+        
+    async def get_current_user(self,
+                             token: str = Depends(oauth2_scheme)
+                             ) -> User:
+        """Get current user from token."""
+        try:
+            # Verify token
+            payload = await self.verify_token(token)
+            
+            # Get user
+            user_data = await self.db.get_user_by_id(int(payload["sub"]))
+            if not user_data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found"
+                )
+                
+            return User(**user_data)
+            
+        except Exception as e:
+            self.logger.error(f"Get current user failed: {str(e)}")
+            raise
+
+# Global auth service instance
+auth_service = AuthService()
 
 class AuthManager(BaseComponent):
     """Authentication and authorization management system"""

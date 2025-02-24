@@ -9,10 +9,12 @@ from jose import JWTError
 from passlib.context import CryptContext
 from core.database.models import User
 from core.database.dao import BaseDAO
-from fastapi import Request, Response
+from fastapi import Request, Response, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import aioredis
 from dataclasses import dataclass
+from ..config.settings import get_settings
+from ..utils.errors import AuthenticationError
 
 @dataclass
 class AuthConfig:
@@ -28,26 +30,27 @@ class AuthConfig:
 class AuthManager:
     """Authentication and authorization management"""
     
-    def __init__(self, config: Dict):
-        self.config = config
+    def __init__(self):
+        self.settings = get_settings()
+        self.secret_key = self.settings.jwt_secret_key
+        self.token_expire_minutes = self.settings.token_expire_minutes
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         self.logger = logging.getLogger('AuthManager')
         self._redis: Optional[aioredis.Redis] = None
         self._token_blacklist: set = set()
         self._cleanup_task: Optional[asyncio.Task] = None
-        self._auth_config = AuthConfig(**config.get('auth', {}))
+        self._auth_config = AuthConfig(**self.settings.auth)
         self._oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-        self._secret_key = config['jwt']['secret']
-        self._algorithm = config['jwt']['algorithm']
-        self._access_token_expire = config['jwt']['access_token_expire']
-        self._refresh_token_expire = config['jwt']['refresh_token_expire']
+        self._algorithm = self.settings.jwt_algorithm
+        self._access_token_expire = self.settings.access_token_expire
+        self._refresh_token_expire = self.settings.refresh_token_expire
 
     async def initialize(self) -> None:
         """Initialize authentication manager"""
         try:
             # Connect to Redis
             self._redis = await aioredis.create_redis_pool(
-                self.config['redis_url']
+                self.settings.redis_url
             )
             
             # Start cleanup task
@@ -63,28 +66,23 @@ class AuthManager:
             )
             raise
 
-    async def authenticate_user(self, email: str, password: str) -> Optional[User]:
-        """Authenticate user credentials"""
+    async def authenticate_user(self, username: str, password: str) -> Dict:
+        """Authenticate user and return user data"""
         try:
-            async with self.get_db_session() as session:
-                dao = BaseDAO(session, User)
-                user = await dao.get_by_email(email)
-                
-                if not user or not self.verify_password(password, user.password_hash):
-                    return None
-                    
-                return user
+            # Add your user authentication logic here
+            user = await self.verify_credentials(username, password)
+            if not user:
+                raise AuthenticationError("Invalid credentials")
+            return user
         except Exception as e:
-            self.logger.error(f"Authentication failed: {str(e)}")
-            raise
+            raise AuthenticationError(str(e))
 
     def create_access_token(self, data: Dict) -> str:
         """Create JWT access token"""
+        expire = datetime.utcnow() + timedelta(minutes=self.token_expire_minutes)
         to_encode = data.copy()
-        expire = datetime.utcnow() + timedelta(minutes=self._access_token_expire)
         to_encode.update({"exp": expire})
-        
-        return jwt.encode(to_encode, self._secret_key, algorithm=self._algorithm)
+        return jwt.encode(to_encode, self.secret_key, algorithm="HS256")
 
     def create_refresh_token(self, data: Dict) -> str:
         """Create JWT refresh token"""
@@ -92,15 +90,23 @@ class AuthManager:
         expire = datetime.utcnow() + timedelta(days=self._refresh_token_expire)
         to_encode.update({"exp": expire})
         
-        return jwt.encode(to_encode, self._secret_key, algorithm=self._algorithm)
+        return jwt.encode(to_encode, self.secret_key, algorithm=self._algorithm)
 
-    def verify_token(self, token: str) -> Optional[Dict]:
-        """Verify JWT token"""
+    async def verify_token(self, token: str) -> Optional[Dict]:
+        """Verify JWT token and return payload"""
         try:
-            payload = jwt.decode(token, self._secret_key, algorithms=[self._algorithm])
+            payload = jwt.decode(token, self.secret_key, algorithms=[self._algorithm])
             return payload
-        except JWTError:
-            return None
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired"
+            )
+        except jwt.JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify password against hash"""

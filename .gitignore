@@ -27,3 +27,4 @@ external_models/
 .qodana/
 .qodana.yaml
 coverage/
+node_modules

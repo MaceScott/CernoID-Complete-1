@@ -1,0 +1,92 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "CernoID Alerts Dashboard",
+    "tags": ["cernoid", "alerts"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "title": "System Alerts",
+        "type": "row",
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+        "panels": [
+          {
+            "title": "Active Alerts",
+            "type": "table",
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 1},
+            "targets": [
+              {
+                "expr": "ALERTS{alertstate=\"firing\"}",
+                "format": "table",
+                "instant": true
+              }
+            ],
+            "columns": [
+              {"text": "alertname", "value": "alertname"},
+              {"text": "severity", "value": "severity"},
+              {"text": "instance", "value": "instance"},
+              {"text": "value", "value": "value"}
+            ],
+            "styles": [
+              {
+                "pattern": "severity",
+                "type": "string",
+                "mappingType": 1,
+                "valueMaps": [
+                  {"value": "critical", "text": "Critical"},
+                  {"value": "warning", "text": "Warning"},
+                  {"value": "info", "text": "Info"}
+                ],
+                "colors": ["#d44a3a", "#warning", "#299c46"]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Error Rates",
+        "type": "row",
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
+        "panels": [
+          {
+            "title": "API Error Rate",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
+                "legendFormat": "{{handler}}"
+              }
+            ],
+            "alert": {
+              "name": "High Error Rate",
+              "conditions": [
+                {
+                  "type": "query",
+                  "query": {"params": ["A", "5m", "now"]},
+                  "reducer": {"type": "avg", "params": []},
+                  "evaluator": {"type": "gt", "params": [0.1]}
+                }
+              ]
+            }
+          },
+          {
+            "title": "Recognition Errors",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+            "targets": [
+              {
+                "expr": "rate(recognition_errors_total[5m])",
+                "legendFormat": "{{type}}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1,
+    "links": []
+  }
+} 

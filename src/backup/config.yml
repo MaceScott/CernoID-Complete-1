@@ -1,0 +1,77 @@
+# Backup configuration
+
+schedules:
+  database:
+    frequency: "0 */6 * * *"  # Every 6 hours
+    retention:
+      days: 30
+      copies: 10
+    type: "full"
+    compression: true
+    encryption: true
+
+  models:
+    frequency: "0 0 * * *"    # Daily
+    retention:
+      days: 90
+      copies: 5
+    type: "incremental"
+    compression: true
+    encryption: true
+
+  configs:
+    frequency: "0 */12 * * *" # Every 12 hours
+    retention:
+      days: 60
+      copies: 10
+    type: "full"
+    compression: true
+    encryption: true
+
+storage:
+  provider: "s3"
+  bucket: "cernoid-backups"
+  region: "us-west-2"
+  path_prefix: "backups/"
+  
+  lifecycle:
+    transition_glacier: 90  # Days until transition to Glacier
+    expire: 365           # Days until deletion
+
+encryption:
+  algorithm: "AES-256"
+  key_rotation: 90        # Days between key rotation
+
+compression:
+  algorithm: "zstd"
+  level: 3
+
+monitoring:
+  metrics:
+    - backup_duration_seconds
+    - backup_size_bytes
+    - backup_success
+    - backup_errors
+  alerts:
+    - name: "BackupFailure"
+      condition: "backup_success == 0"
+      severity: "critical"
+    - name: "BackupSize"
+      condition: "backup_size_bytes > 1000000000"  # 1GB
+      severity: "warning"
+
+notifications:
+  channels:
+    - type: "email"
+      recipients:
+        - "admin@cernoid.com"
+    - type: "slack"
+      webhook: "https://hooks.slack.com/services/xxx"
+
+recovery:
+  verification:
+    frequency: "0 0 * * 0"  # Weekly
+    sample_size: 0.1        # 10% of backups
+  testing:
+    environment: "recovery"
+    automated: true 

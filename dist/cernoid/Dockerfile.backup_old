@@ -1,0 +1,39 @@
+FROM continuumio/miniconda3
+
+WORKDIR /app
+
+# Create conda environment
+COPY environment.yml .
+RUN conda env create -f environment.yml
+
+# Make RUN commands use the new environment
+SHELL ["conda", "run", "-n", "myenv", "/bin/bash", "-c"]
+
+# Install additional dependencies
+RUN pip install \
+    fastapi==0.110.0 \
+    python-multipart==0.0.9 \
+    uvicorn==0.27.1 \
+    python-jose==3.3.0 \
+    passlib==1.7.4 \
+    python-dotenv==1.0.1 \
+    boto3==1.36.21
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/face_encodings
+
+# Set permissions
+RUN chmod -R 755 /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PORT=8000
+
+# Expose port
+EXPOSE 8000
+
+# Run the application
+CMD ["conda", "run", "-n", "myenv", "python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

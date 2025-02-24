@@ -1,86 +1,65 @@
-from typing import Optional, TypeVar, Callable, Any
-from functools import wraps
+"""
+Centralized error handling with better structure and reusability.
+"""
+from typing import Type, Callable, Any, Optional, Dict, Tuple
+from fastapi import HTTPException, status
 import logging
-import traceback
-import sys
-from datetime import datetime
+from functools import wraps
 
-T = TypeVar('T')
+logger = logging.getLogger(__name__)
 
-def handle_errors(
-    logger: Optional[logging.Logger] = None,
-    default: Any = None,
-    raise_error: bool = False,
-    retry_count: int = 0,
-    retry_delay: float = 1.0
+class AppErrorCode:
+    """Centralized error codes"""
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    AUTH_ERROR = "AUTH_ERROR"
+    NOT_FOUND = "NOT_FOUND"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    RECOGNITION_ERROR = "RECOGNITION_ERROR"
+    DATABASE_ERROR = "DATABASE_ERROR"
+    NOTIFICATION_ERROR = "NOTIFICATION_ERROR"
+
+class AppError(Exception):
+    """Enhanced base application error"""
+    def __init__(self, 
+                 message: str,
+                 code: str,
+                 status_code: int = 500,
+                 details: Optional[Dict] = None):
+        self.message = message
+        self.code = code
+        self.status_code = status_code
+        self.details = details or {}
+        super().__init__(self.message)
+
+def handle_exceptions(
+    error_map: Dict[Type[Exception], Tuple[str, str, int]] = None,
+    default_status: int = 500
 ) -> Callable:
-    """Error handling decorator"""
+    """
+    Enhanced error handling decorator with mapping
+    """
+    error_map = error_map or {}
     
-    def decorator(func: Callable[..., T]) -> Callable[..., Optional[T]]:
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> Optional[T]:
-            nonlocal logger
-            
-            # Get logger from class if not provided
-            if not logger and args and hasattr(args[0], 'logger'):
-                logger = args[0].logger
-            elif not logger:
-                logger = logging.getLogger(func.__name__)
-
-            attempts = retry_count + 1
-            last_error = None
-
-            for attempt in range(attempts):
-                try:
-                    return await func(*args, **kwargs)
-                    
-                except Exception as e:
-                    last_error = e
-                    exc_info = sys.exc_info()
-                    
-                    # Log error with context
-                    error_context = {
-                        'function': func.__name__,
-                        'args': args,
-                        'kwargs': kwargs,
-                        'attempt': attempt + 1,
-                        'timestamp': datetime.utcnow().isoformat(),
-                        'traceback': ''.join(
-                            traceback.format_exception(*exc_info)
-                        )
-                    }
-                    
-                    logger.error(
-                        f"Error in {func.__name__}: {str(e)}",
-                        extra={'error_context': error_context}
-                    )
-
-                    if attempt < attempts - 1:
-                        await asyncio.sleep(retry_delay * (attempt + 1))
-                    elif raise_error:
-                        raise last_error
-                        
-            return default
-            
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                error_info = error_map.get(type(e))
+                if error_info:
+                    message, code, status = error_info
+                    raise AppError(message, code, status)
+                
+                logger.exception(f"Unhandled error in {func.__name__}")
+                raise AppError(str(e), "INTERNAL_ERROR", default_status)
         return wrapper
     return decorator
 
-class ApplicationError(Exception):
-    """Base application error"""
-    
-    def __init__(self, message: str, code: str = None):
-        self.message = message
-        self.code = code or 'INTERNAL_ERROR'
-        super().__init__(self.message)
-
-class ConfigurationError(ApplicationError):
+class ConfigurationError(AppError):
     """Configuration error"""
     pass
 
-class ValidationError(ApplicationError):
-    """Validation error"""
-    pass
-
-class SecurityError(ApplicationError):
+class SecurityError(AppError):
     """Security error"""
     pass 

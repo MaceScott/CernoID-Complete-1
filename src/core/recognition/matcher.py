@@ -1,10 +1,16 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 import numpy as np
 from datetime import datetime
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 import faiss
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from ..utils.config import get_settings
+from ..utils.logging import get_logger
+from .encoder import EncodingResult
 
 from ..base import BaseComponent
 from ..utils.errors import MatcherError
@@ -12,18 +18,25 @@ from ..utils.metrics import PerformanceMetrics
 
 @dataclass
 class MatchResult:
-    """Represents a face matching result"""
-    face_id: str
+    """Face matching result with confidence and metadata"""
+    person_id: str
     confidence: float
-    metadata: Dict
-    timestamp: datetime = datetime.utcnow()
+    encoding_id: str
+    quality_score: float
+    metadata: Dict[str, Any]
+    match_time: float
 
 class FaceMatcher(BaseComponent):
-    """Enhanced face matching engine"""
+    """
+    Advanced face matcher with FAISS indexing and clustering
+    """
     
     def __init__(self, config: dict):
         self._validate_config(config)
         super().__init__(config)
+        
+        self.settings = get_settings()
+        self.logger = get_logger(__name__)
         
         # Matching settings
         self._matching_threshold = config.get('matcher.threshold', 0.6)
@@ -31,7 +44,7 @@ class FaceMatcher(BaseComponent):
         self._batch_size = config.get('matcher.batch_size', 32)
         
         # Initialize FAISS index for fast similarity search
-        self._index = self._initialize_index()
+        self._index = self._create_index()
         
         # Face storage
         self._face_data: Dict[str, Dict] = {}
@@ -52,6 +65,18 @@ class FaceMatcher(BaseComponent):
             'false_positives': 0,
             'false_negatives': 0
         }
+        
+        # Initialize thread pool
+        self.thread_pool = ThreadPoolExecutor(
+            max_workers=self.settings.matcher_threads
+        )
+        
+        # Cache for frequent matches
+        self.match_cache = {}
+        
+        # Initialize clustering
+        self.clusters = defaultdict(list)
+        self.cluster_centers = {}
 
     def _validate_config(self, config: dict) -> None:
         """Validate matcher configuration"""
@@ -65,31 +90,23 @@ class FaceMatcher(BaseComponent):
             if not self._get_nested_config(config, key):
                 raise MatcherError(f"Missing required config: {key}")
 
-    def _initialize_index(self) -> faiss.Index:
-        """Initialize FAISS index for face matching"""
-        try:
-            # Choose index type based on config
-            index_type = self.config.get('matcher.index_type', 'L2')
+    def _create_index(self) -> faiss.Index:
+        """Create FAISS index for fast matching"""
+        dimension = self._index_size
+        
+        if self.settings.use_gpu and faiss.get_num_gpus() > 0:
+            # GPU index
+            index = faiss.IndexFlatL2(dimension)
+            index = faiss.index_cpu_to_gpu(
+                faiss.StandardGpuResources(),
+                0,
+                index
+            )
+        else:
+            # CPU index
+            index = faiss.IndexFlatL2(dimension)
             
-            if index_type == 'L2':
-                index = faiss.IndexFlatL2(self._index_size)
-            elif index_type == 'IP':  # Inner Product
-                index = faiss.IndexFlatIP(self._index_size)
-            elif index_type == 'IVF':  # IVF with faster search
-                quantizer = faiss.IndexFlatL2(self._index_size)
-                index = faiss.IndexIVFFlat(
-                    quantizer, 
-                    self._index_size,
-                    self.config.get('matcher.ivf_lists', 100)
-                )
-                index.train(np.zeros((1, self._index_size), dtype=np.float32))
-            else:
-                raise MatcherError(f"Unsupported index type: {index_type}")
-            
-            return index
-            
-        except Exception as e:
-            raise MatcherError(f"Index initialization failed: {str(e)}")
+        return index
 
     async def add_face(self, face_id: str, encoding: np.ndarray, metadata: Dict) -> bool:
         """Add face encoding to matcher"""
@@ -116,6 +133,9 @@ class FaceMatcher(BaseComponent):
                 self._next_id += 1
                 self._stats['total_faces'] += 1
                 
+                # Update clusters
+                await self._update_clusters(face_id, encoding)
+                
                 return True
                 
         except Exception as e:
@@ -132,6 +152,11 @@ class FaceMatcher(BaseComponent):
                 
                 # Normalize encoding
                 encoding = self._normalize_encoding(encoding)
+                
+                # Check cache first
+                cache_key = self._get_cache_key(encoding)
+                if cache_key in self.match_cache:
+                    return self.match_cache[cache_key]
                 
                 # Search index
                 distances, indices = self._index.search(
@@ -151,13 +176,21 @@ class FaceMatcher(BaseComponent):
                             face_id = self._get_face_id(idx)
                             if face_id:
                                 match = MatchResult(
-                                    face_id=face_id,
+                                    person_id=face_id,
                                     confidence=confidence,
-                                    metadata=self._face_data[face_id]['metadata']
+                                    encoding_id=str(idx),
+                                    quality_score=self._face_data[face_id]['metadata'].get('quality_score', 0.0),
+                                    metadata=self._face_data[face_id]['metadata'],
+                                    match_time=time.time() - self._metrics.get_start('matching_time')
                                 )
                                 matches.append(match)
                 
                 self._stats['total_matches'] += len(matches)
+                
+                # Cache results
+                if matches:
+                    self.match_cache[cache_key] = matches
+                
                 return matches
                 
         except Exception as e:
@@ -190,7 +223,7 @@ class FaceMatcher(BaseComponent):
     def _distance_to_confidence(self, distance: float) -> float:
         """Convert distance metric to confidence score"""
         # For L2 distance, smaller is better
-        if self.config.get('matcher.metric') == 'L2':
+        if self.settings.use_l2_distance:
             return max(0, 1 - (distance / 2))
         # For Inner Product, larger is better
         else:
@@ -226,7 +259,7 @@ class FaceMatcher(BaseComponent):
         """Rebuild FAISS index"""
         try:
             # Create new index
-            new_index = self._initialize_index()
+            new_index = self._create_index()
             
             # Add all faces except removed one
             encodings = []
@@ -263,4 +296,64 @@ class FaceMatcher(BaseComponent):
             'index_size': len(self._face_data)
         })
         
-        return stats 
+        return stats
+
+    async def _update_clusters(self, person_id: str, encoding: np.ndarray) -> None:
+        """Update person clusters with new encoding"""
+        try:
+            # Add to person's cluster
+            self.clusters[person_id].append(encoding)
+            
+            # Update cluster center
+            if len(self.clusters[person_id]) > 1:
+                center = np.mean(self.clusters[person_id], axis=0)
+                self.cluster_centers[person_id] = center
+                
+                # Remove outliers
+                if self.settings.remove_outliers:
+                    await self._remove_cluster_outliers(person_id)
+                    
+        except Exception as e:
+            self.logger.warning(f"Cluster update failed: {str(e)}")
+            
+    async def _remove_cluster_outliers(self, person_id: str) -> None:
+        """Remove outlier encodings from person's cluster"""
+        center = self.cluster_centers[person_id]
+        encodings = self.clusters[person_id]
+        
+        # Calculate distances to center
+        distances = [
+            np.linalg.norm(enc - center)
+            for enc in encodings
+        ]
+        
+        # Remove outliers (beyond 2 standard deviations)
+        mean_dist = np.mean(distances)
+        std_dist = np.std(distances)
+        threshold = mean_dist + 2 * std_dist
+        
+        self.clusters[person_id] = [
+            enc for enc, dist in zip(encodings, distances)
+            if dist <= threshold
+        ]
+        
+    def _get_cache_key(self, encoding: np.ndarray) -> str:
+        """Generate cache key for encoding"""
+        return hash(encoding.tobytes())
+        
+    async def cleanup(self) -> None:
+        """Cleanup resources"""
+        self.thread_pool.shutdown()
+        self.match_cache.clear()
+        
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get matcher statistics"""
+        return {
+            "total_encodings": self._index.ntotal,
+            "total_persons": len(self.clusters),
+            "cache_size": len(self.match_cache),
+            "avg_cluster_size": np.mean([
+                len(cluster) for cluster in self.clusters.values()
+            ]),
+            "memory_usage": self._index.get_memory_usage()
+        } 

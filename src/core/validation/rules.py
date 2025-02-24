@@ -1,384 +1,265 @@
-from typing import Dict, Optional, Any, List, Pattern, Union
-import re
+"""
+Validation rules for data validation.
+Organized into categories with consistent error handling and type checking.
+"""
+
+from typing import Dict, Optional, Any, List, Pattern, Union, Callable, TypeVar
 from datetime import datetime, date
 from decimal import Decimal
+import re
 import uuid
-from email_validator import validate_email, EmailNotValidError
-from ..utils.errors import handle_errors
-from .validator import ValidationRule
 import ipaddress
+from dataclasses import dataclass
+from enum import Enum
+from email_validator import validate_email, EmailNotValidError
+from ..utils.errors import handle_errors, ValidationError
 
-class EmailRule(ValidationRule):
-    """Email validation"""
+T = TypeVar('T')
+
+class RuleCategory(Enum):
+    """Categories for validation rules"""
+    TYPE = "type"
+    STRING = "string"
+    NUMBER = "number"
+    DATE = "date"
+    NETWORK = "network"
+    COMPARISON = "comparison"
+    CUSTOM = "custom"
+
+@dataclass
+class ValidationContext:
+    """Context for validation rules"""
+    data: Dict[str, Any]
+    db: Optional[Any] = None
+    user: Optional[Dict[str, Any]] = None
+    request: Optional[Any] = None
+
+class BaseRule:
+    """Base class for all validation rules"""
     
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
+    def __init__(self, message: Optional[str] = None, category: RuleCategory = None):
+        self.message = message
+        self.category = category
+
+    @handle_errors
+    async def validate(self, value: Any, context: Optional[ValidationContext] = None) -> Optional[str]:
+        """Validate the value"""
+        raise NotImplementedError
+
+    def _format_message(self, default: str) -> str:
+        """Format error message"""
+        return self.message or default
+
+class TypeRules:
+    """Type validation rules"""
+
+    @staticmethod
+    def required(value: Any) -> Optional[str]:
+        """Validate required field"""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "Field is required"
+        return None
+
+    @staticmethod
+    def type_check(value: Any, expected_type: Union[type, tuple]) -> Optional[str]:
+        """Validate value type"""
+        if value is not None and not isinstance(value, expected_type):
+            type_name = getattr(expected_type, '__name__', str(expected_type))
+            return f"Must be of type {type_name}"
+        return None
+
+class StringRules:
+    """String validation rules"""
+
+    @staticmethod
+    def length(value: str, min_length: Optional[int] = None, 
+               max_length: Optional[int] = None) -> Optional[str]:
+        """Validate string length"""
+        if value is None:
+            return None
+            
+        length = len(str(value))
+        if min_length is not None and length < min_length:
+            return f"Must be at least {min_length} characters"
+        if max_length is not None and length > max_length:
+            return f"Must be at most {max_length} characters"
+        return None
+
+    @staticmethod
+    def pattern(value: str, regex: Union[str, Pattern]) -> Optional[str]:
+        """Validate string pattern"""
+        if value is None:
+            return None
+            
+        pattern = re.compile(regex) if isinstance(regex, str) else regex
+        if not pattern.match(str(value)):
+            return "Invalid format"
+        return None
+
+    @staticmethod
+    def email(value: str) -> Optional[str]:
+        """Validate email address"""
         if value is None:
             return None
             
         try:
             validate_email(str(value))
+            return None
         except EmailNotValidError:
-            return self.message or "Invalid email address"
-            
-        return None
+            return "Invalid email address"
 
-class LengthRule(ValidationRule):
-    """String length validation"""
-    
-    def __init__(self,
-                 min_: Optional[int] = None,
-                 max_: Optional[int] = None,
-                 message: Optional[str] = None):
-        super().__init__(message)
-        self.min = min_
-        self.max = max_
-
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
+    @staticmethod
+    def url(value: str) -> Optional[str]:
+        """Validate URL format"""
         if value is None:
             return None
             
-        length = len(str(value))
-        
-        if self.min is not None and length < self.min:
-            return (
-                self.message or
-                f"Must be at least {self.min} characters"
-            )
-            
-        if self.max is not None and length > self.max:
-            return (
-                self.message or
-                f"Must be at most {self.max} characters"
-            )
-            
+        url_pattern = (
+            r'^https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.'
+            r'[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)$'
+        )
+        if not re.match(url_pattern, str(value)):
+            return "Invalid URL"
         return None
 
-class DateRule(ValidationRule):
-    """Date validation"""
-    
-    def __init__(self,
-                 format_: str = '%Y-%m-%d',
-                 message: Optional[str] = None):
-        super().__init__(message)
-        self.format = format_
+class NumberRules:
+    """Numeric validation rules"""
 
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
+    @staticmethod
+    def range(value: Union[int, float], 
+             min_value: Optional[Union[int, float]] = None,
+             max_value: Optional[Union[int, float]] = None) -> Optional[str]:
+        """Validate numeric range"""
+        if value is None:
+            return None
+            
+        if min_value is not None and value < min_value:
+            return f"Must be greater than or equal to {min_value}"
+        if max_value is not None and value > max_value:
+            return f"Must be less than or equal to {max_value}"
+        return None
+
+class DateRules:
+    """Date validation rules"""
+
+    @staticmethod
+    def date_format(value: str, format_: str = '%Y-%m-%d') -> Optional[str]:
+        """Validate date format"""
         if value is None:
             return None
             
         try:
             if isinstance(value, (datetime, date)):
                 return None
-                
-            datetime.strptime(str(value), self.format)
+            datetime.strptime(str(value), format_)
+            return None
         except ValueError:
-            return (
-                self.message or
-                f"Must be a valid date in format {self.format}"
-            )
-            
-        return None
+            return f"Must be a valid date in format {format_}"
 
-class ChoiceRule(ValidationRule):
-    """Choice validation"""
-    
-    def __init__(self,
-                 choices: List[Any],
-                 message: Optional[str] = None):
-        super().__init__(message)
-        self.choices = choices
+class NetworkRules:
+    """Network-related validation rules"""
 
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
-        if value is not None and value not in self.choices:
-            return (
-                self.message or
-                f"Must be one of: {', '.join(map(str, self.choices))}"
-            )
-            
-        return None
-
-class UniqueRule(ValidationRule):
-    """Unique field validation"""
-    
-    def __init__(self,
-                 model: str,
-                 field: str,
-                 message: Optional[str] = None):
-        super().__init__(message)
-        self.model = model
-        self.field = field
-
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
+    @staticmethod
+    def ip_address(value: str) -> Optional[str]:
+        """Validate IP address"""
         if value is None:
             return None
             
-        db = context.get('db')
-        if not db:
+        try:
+            ipaddress.ip_address(str(value))
             return None
-            
-        model = db.get_model(self.model)
-        if not model:
-            return None
-            
-        exists = await db.exists(
-            model,
-            **{self.field: value}
-        )
-        
-        if exists:
-            return (
-                self.message or
-                f"Value already exists"
-            )
-            
-        return None
+        except ValueError:
+            return "Invalid IP address"
 
-class CompareRule(ValidationRule):
-    """Compare fields validation"""
-    
-    def __init__(self,
-                 field: str,
-                 operator: str = '==',
-                 message: Optional[str] = None):
-        super().__init__(message)
-        self.field = field
-        self.operator = operator
-
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
+    @staticmethod
+    def uuid_check(value: str) -> Optional[str]:
+        """Validate UUID format"""
         if value is None:
             return None
             
-        data = context.get('data', {})
-        other = data.get(self.field)
-        
-        if self.operator == '==':
-            valid = value == other
-        elif self.operator == '!=':
-            valid = value != other
-        elif self.operator == '>':
-            valid = value > other
-        elif self.operator == '>=':
-            valid = value >= other
-        elif self.operator == '<':
-            valid = value < other
-        elif self.operator == '<=':
-            valid = value <= other
-        else:
-            valid = False
-            
-        if not valid:
-            return (
-                self.message or
-                f"Must be {self.operator} {self.field}"
-            )
-            
+        try:
+            uuid.UUID(str(value))
+            return None
+        except ValueError:
+            return "Invalid UUID"
+
+class ComparisonRules:
+    """Comparison validation rules"""
+
+    @staticmethod
+    def choices(value: Any, options: List[Any]) -> Optional[str]:
+        """Validate value against choices"""
+        if value is not None and value not in options:
+            return f"Must be one of: {', '.join(map(str, options))}"
         return None
 
-class CustomRule(ValidationRule):
-    """Custom validation function"""
+    @staticmethod
+    def compare(value: Any, other: Any, operator: str = '==') -> Optional[str]:
+        """Compare values"""
+        if value is None:
+            return None
+            
+        operators = {
+            '==': lambda x, y: x == y,
+            '!=': lambda x, y: x != y,
+            '>': lambda x, y: x > y,
+            '>=': lambda x, y: x >= y,
+            '<': lambda x, y: x < y,
+            '<=': lambda x, y: x <= y
+        }
+        
+        if operator not in operators:
+            return f"Invalid operator: {operator}"
+            
+        if not operators[operator](value, other):
+            return f"Must be {operator} {other}"
+        return None
+
+class CustomRule(BaseRule):
+    """Custom validation rule"""
     
-    def __init__(self,
-                 func: callable,
+    def __init__(self, func: Callable[[Any, Optional[Dict]], Optional[str]], 
                  message: Optional[str] = None):
-        super().__init__(message)
+        super().__init__(message, RuleCategory.CUSTOM)
         self.func = func
 
-    async def validate(self,
-                      value: Any,
-                      context: Dict = None) -> Optional[str]:
+    async def validate(self, value: Any, 
+                      context: Optional[ValidationContext] = None) -> Optional[str]:
+        """Execute custom validation function"""
         try:
             result = self.func(value, context)
-            
             if isinstance(result, bool):
-                return (
-                    None if result
-                    else (self.message or "Validation failed")
-                )
-                
+                return None if result else self._format_message("Validation failed")
             return result
-            
         except Exception as e:
             return str(e)
 
-def required(value: Any,
-            param: bool = True) -> Optional[str]:
-    """Required field validation"""
-    if param and value is None:
-        return "Field is required"
-    return None
+# Register all validation rules
+VALIDATION_RULES = {
+    # Type rules
+    'required': TypeRules.required,
+    'type': TypeRules.type_check,
+    
+    # String rules
+    'length': StringRules.length,
+    'pattern': StringRules.pattern,
+    'email': StringRules.email,
+    'url': StringRules.url,
+    
+    # Number rules
+    'range': NumberRules.range,
+    
+    # Date rules
+    'date': DateRules.date_format,
+    
+    # Network rules
+    'ip_address': NetworkRules.ip_address,
+    'uuid': NetworkRules.uuid_check,
+    
+    # Comparison rules
+    'choices': ComparisonRules.choices,
+    'compare': ComparisonRules.compare
+}
 
-def type_(value: Any,
-         type_name: str) -> Optional[str]:
-    """Type validation"""
-    if value is None:
-        return None
-        
-    if type_name == 'string' and not isinstance(value, str):
-        return "Must be a string"
-    elif type_name == 'integer' and not isinstance(value, int):
-        return "Must be an integer"
-    elif type_name == 'float' and not isinstance(value, (int, float)):
-        return "Must be a number"
-    elif type_name == 'boolean' and not isinstance(value, bool):
-        return "Must be a boolean"
-    elif type_name == 'array' and not isinstance(value, list):
-        return "Must be an array"
-    elif type_name == 'object' and not isinstance(value, dict):
-        return "Must be an object"
-        
-    return None
-
-def min_length(value: Union[str, List],
-              length: int) -> Optional[str]:
-    """Minimum length validation"""
-    if value is None:
-        return None
-        
-    if len(value) < length:
-        return f"Must be at least {length} characters long"
-    return None
-
-def max_length(value: Union[str, List],
-              length: int) -> Optional[str]:
-    """Maximum length validation"""
-    if value is None:
-        return None
-        
-    if len(value) > length:
-        return f"Must be at most {length} characters long"
-    return None
-
-def min_value(value: Union[int, float],
-             min_val: Union[int, float]) -> Optional[str]:
-    """Minimum value validation"""
-    if value is None:
-        return None
-        
-    if value < min_val:
-        return f"Must be greater than or equal to {min_val}"
-    return None
-
-def max_value(value: Union[int, float],
-             max_val: Union[int, float]) -> Optional[str]:
-    """Maximum value validation"""
-    if value is None:
-        return None
-        
-    if value > max_val:
-        return f"Must be less than or equal to {max_val}"
-    return None
-
-def pattern(value: str,
-           regex: str) -> Optional[str]:
-    """Pattern validation"""
-    if value is None:
-        return None
-        
-    if not re.match(regex, value):
-        return "Invalid format"
-    return None
-
-def email(value: str) -> Optional[str]:
-    """Email validation"""
-    if value is None:
-        return None
-        
-    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    if not re.match(email_regex, value):
-        return "Invalid email address"
-    return None
-
-def url(value: str) -> Optional[str]:
-    """URL validation"""
-    if value is None:
-        return None
-        
-    url_regex = r'^https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)$'
-    if not re.match(url_regex, value):
-        return "Invalid URL"
-    return None
-
-def ip_address(value: str) -> Optional[str]:
-    """IP address validation"""
-    if value is None:
-        return None
-        
-    try:
-        ipaddress.ip_address(value)
-        return None
-    except ValueError:
-        return "Invalid IP address"
-
-def uuid_(value: str) -> Optional[str]:
-    """UUID validation"""
-    if value is None:
-        return None
-        
-    try:
-        uuid.UUID(value)
-        return None
-    except ValueError:
-        return "Invalid UUID"
-
-def date(value: str,
-        format: str = '%Y-%m-%d') -> Optional[str]:
-    """Date validation"""
-    if value is None:
-        return None
-        
-    try:
-        datetime.strptime(value, format)
-        return None
-    except ValueError:
-        return "Invalid date format"
-
-def choices(value: Any,
-           options: List) -> Optional[str]:
-    """Choices validation"""
-    if value is None:
-        return None
-        
-    if value not in options:
-        return f"Must be one of: {', '.join(map(str, options))}"
-    return None
-
-def range_(value: Union[int, float],
-         min_val: Union[int, float],
-         max_val: Union[int, float]) -> Optional[str]:
-    """Range validation"""
-    if value is None:
-        return None
-        
-    if value < min_val or value > max_val:
-        return f"Must be between {min_val} and {max_val}"
-    return None
-
-# Register built-in rules
-BUILT_IN_RULES = {
-    'required': required,
-    'type': type_,
-    'min_length': min_length,
-    'max_length': max_length,
-    'min_value': min_value,
-    'max_value': max_value,
-    'pattern': pattern,
-    'email': email,
-    'url': url,
-    'ip_address': ip_address,
-    'uuid': uuid_,
-    'date': date,
-    'choices': choices,
-    'range': range_
-} 
+# For backward compatibility
+BUILT_IN_RULES = VALIDATION_RULES 

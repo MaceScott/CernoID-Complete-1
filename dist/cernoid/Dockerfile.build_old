@@ -1,0 +1,10 @@
+FROM python:3.10-slim
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y build-essential cmake pkg-config
+
+RUN pip3 install wheel
+RUN pip3 wheel dlib==19.24.6
+
+CMD cp /build/dlib*.whl /output/

@@ -1,34 +1,69 @@
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, status
-from typing import List
-import numpy as np
-import cv2
+"""
+Face recognition API endpoints.
+"""
+from typing import Dict, Any, Optional, List
+from fastapi import APIRouter, Depends, File, UploadFile, Query, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import base64
+
+from ..dependencies import get_current_user, get_recognition_service
+from ..schemas import (
+    RecognitionResult,
+    ErrorResponse
+)
+from core.utils.errors import handle_errors
 from core.security.middleware import SecurityMiddleware
 from core.recognition.service import RecognitionService
-from ..schemas import PersonCreate, PersonResponse, RecognitionResult
+from ..schemas import PersonCreate, PersonResponse
+from ..schemas.recognition import (
+    FaceDetectionResponse,
+    FaceEncodingResponse,
+    MatchResult
+)
+from ...core.recognition import FaceRecognitionSystem
+from ...core.auth.service import AuthService
+from ...core.recognition.pipeline import RecognitionPipeline
+from ...core.security.auth import get_current_user
+from ...utils.logging import get_logger
 
 router = APIRouter(prefix="/recognition", tags=["recognition"])
+logger = get_logger(__name__)
+recognition = RecognitionPipeline()
 
-@router.post("/detect", response_model=List[RecognitionResult])
+class ImageRequest(BaseModel):
+    """Image request model."""
+    image: str
+    options: Optional[Dict[str, Any]] = None
+
+@router.post("/recognize/")
+async def recognize_face(...):
+    # Recognition route implementation
+
+@router.post("/detect", response_model=FaceDetectionResponse)
 async def detect_faces(
     image: UploadFile = File(...),
-    recognition_service: RecognitionService = Depends(),
-    security: SecurityMiddleware = Depends()
+    current_user = Depends(get_current_user)
 ):
-    """Detect and recognize faces in image"""
-    try:
-        # Read and decode image
-        contents = await image.read()
-        nparr = np.frombuffer(contents, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        # Process image
-        results = await recognition_service.detect_faces(img)
-        return results
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+    """Detect faces in image."""
+    # Implementation
+
+@router.post("/encode", response_model=FaceEncodingResponse)
+async def create_encoding(
+    image: UploadFile = File(...),
+    user_id: Optional[int] = None,
+    current_user = Depends(get_current_user)
+):
+    """Create face encoding from image."""
+    # Implementation
+
+@router.post("/match", response_model=List[MatchResult])
+async def match_faces(
+    image: UploadFile = File(...),
+    current_user = Depends(get_current_user)
+):
+    """Match faces against database."""
+    # Implementation
 
 @router.post("/persons", response_model=PersonResponse)
 async def create_person(
