@@ -31,7 +31,7 @@ export const OptimizedComponent = memo(
     // Custom comparison logic if needed
     if (prev.dependencies && next.dependencies) {
       return prev.dependencies.every(
-        (dep, i) => dep === next.dependencies[i]
+        (dep, i) => next.dependencies && dep === next.dependencies[i]
       )
     }
     return true

@@ -7,9 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog"
+} from "@/components/ui/Dialog"
 import { Button } from "@/components/ui/Button"
-import { Alert } from "@/components/ui/alert"
+import Alert from "@/components/ui/Alert"
 import {
   Camera,
   Bell,

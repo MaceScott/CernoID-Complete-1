@@ -71,7 +71,8 @@ export const ResultsViewer: React.FC<ResultsViewerProps> = ({
             // Draw faces that meet confidence threshold
             faces.forEach((face, index) => {
                 if (face.confidence >= confidenceThreshold) {
-                    drawFace(ctx, face, index === faces.indexOf(selectedFace));
+                    const isSelected = selectedFace !== null && index === faces.indexOf(selectedFace);
+                    drawFace(ctx, face, isSelected);
                 }
             });
         };

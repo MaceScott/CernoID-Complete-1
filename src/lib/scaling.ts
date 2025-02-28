@@ -1,5 +1,5 @@
 import { Cluster } from 'cluster'
-import { RedisCluster } from 'redis'
+import { RedisClusterType } from 'redis'
 
 export const scaling = {
   // Horizontal scaling support

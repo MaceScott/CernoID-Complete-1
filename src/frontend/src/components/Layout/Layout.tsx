@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import {
     Box,
@@ -18,15 +18,19 @@ export const Layout: React.FC = () => {
     const { theme: themeMode } = useApp();
     const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [themeModeState, setThemeMode] = useState('light');
+
+    // Update themeMode based on prefersDarkMode after component mounts
+    useEffect(() => {
+        setThemeMode(prefersDarkMode ? 'dark' : 'light');
+    }, [prefersDarkMode]);
 
     // Create theme based on user preference or system preference
     const theme = React.useMemo(
         () =>
             createTheme({
                 palette: {
-                    mode: themeMode === 'system' ? 
-                        (prefersDarkMode ? 'dark' : 'light') : 
-                        themeMode,
+                    mode: prefersDarkMode ? 'dark' : 'light',
                     primary: {
                         main: '#1976d2',
                         light: '#42a5f5',
@@ -49,7 +53,7 @@ export const Layout: React.FC = () => {
                     }
                 }
             }),
-        [themeMode, prefersDarkMode]
+        [prefersDarkMode]
     );
 
     return (

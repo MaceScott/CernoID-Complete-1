@@ -1,11 +1,21 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Surveillance System Infrastructure'
+Description: 'CernoID Infrastructure'
 
 Parameters:
   Environment:
     Type: String
     Default: production
     AllowedValues: [development, staging, production]
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    
+  RedisPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
 
 Resources:
   VPC:
@@ -18,11 +28,65 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-vpc
 
+  PrivateSubnets:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [0, !GetAZs '']
+
+  PublicSubnets:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [1, !GetAZs '']
+
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: !Sub ${AWS::StackName}-cluster
       CapacityProviders: [FARGATE]
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      EngineVersion: 15.3
+      DBInstanceClass: db.t3.medium
+      AllocatedStorage: 20
+      StorageType: gp3
+      MultiAZ: !Equals [!Ref Environment, production]
+      PubliclyAccessible: false
+      VPCSecurityGroups: [!Ref DBSecurityGroup]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      DeleteAutomatedBackups: false
+      StorageEncrypted: true
+      MasterUsername: !Sub ${AWS::StackName}admin
+      MasterUserPassword: !Ref DBPassword
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  ElastiCache:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      Engine: redis
+      EngineVersion: '7.0'
+      CacheNodeType: cache.t3.micro
+      NumCacheClusters: !If [IsProduction, 2, 1]
+      AutomaticFailoverEnabled: !Equals [!Ref Environment, production]
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds: [!Ref CacheSecurityGroup]
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+      AuthToken: !Ref RedisPassword
 
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -30,18 +94,31 @@ Resources:
       Type: application
       Subnets: !Ref PublicSubnets
       SecurityGroups: [!Ref ALBSecurityGroup]
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+        - Key: routing.http2.enabled
+          Value: 'true'
+        - Key: access_logs.s3.enabled
+          Value: 'true'
+        - Key: access_logs.s3.bucket
+          Value: !Ref LogBucket
 
-  RDSInstance:
-    Type: AWS::RDS::DBInstance
-    Properties:
-      Engine: postgres
-      DBInstanceClass: db.t3.medium
-      AllocatedStorage: 20
-      BackupRetentionPeriod: 7
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-vpc-id
 
-  ElastiCache:
-    Type: AWS::ElastiCache::CacheCluster
-    Properties:
-      Engine: redis
-      CacheNodeType: cache.t3.micro
-      NumCacheNodes: 1 
+  DBEndpoint:
+    Description: Database endpoint
+    Value: !GetAtt RDSInstance.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-db-endpoint
+
+  RedisEndpoint:
+    Description: Redis endpoint
+    Value: !GetAtt ElastiCache.PrimaryEndPoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-redis-endpoint 

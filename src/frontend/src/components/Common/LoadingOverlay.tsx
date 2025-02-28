@@ -5,6 +5,7 @@ import {
     Typography,
     Box
 } from '@mui/material';
+import { Theme } from '@mui/material/styles';
 
 interface LoadingOverlayProps {
     open: boolean;
@@ -19,7 +20,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
         <Backdrop
             sx={{
                 color: '#fff',
-                zIndex: (theme) => theme.zIndex.drawer + 1,
+                zIndex: (theme: Theme) => theme.zIndex.drawer + 1,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 2
@@ -32,8 +33,8 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
                     {message}
                 </Typography>
             )}
-        </Box>
-    </Backdrop>
+        </Backdrop>
+    );
 };
 
 interface LoadingButtonContentProps {

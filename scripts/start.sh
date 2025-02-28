@@ -3,6 +3,32 @@
 # Enable error handling
 set -e
 
+# Initialize environment
+source scripts/init-env.sh
+
+# Wait for dependencies
+echo "Waiting for database..."
+python scripts/wait-for-it.py --service db
+
+echo "Waiting for Redis..."
+python scripts/wait-for-it.py --service redis
+
+# Run database migrations
+echo "Running database migrations..."
+python src/manage.py migrate
+
+# Start the application
+if [ "$NODE_ENV" = "production" ]; then
+    # Production mode: Start both Next.js and Python servers
+    python src/manage.py collectstatic --noinput
+    gunicorn src.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 4 --threads 2 &
+    npm start
+else
+    # Development mode: Start with hot reloading
+    python src/manage.py runserver 0.0.0.0:${PORT:-8000} &
+    npm run dev
+fi
+
 # Setup logging
 LOG_DIR="$(dirname "$0")/../logs"
 LOG_FILE="$LOG_DIR/startup.log"

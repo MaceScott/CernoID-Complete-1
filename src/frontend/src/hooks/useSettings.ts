@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
 import { AppSettings } from '../types';
 import { useApp } from '../context/AppContext';
@@ -7,6 +7,7 @@ export const useSettings = () => {
     const { dispatch } = useApp();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [settings, setSettings] = useState<AppSettings | null>(null);
 
     const fetchSettings = useCallback(async () => {
         setLoading(true);
@@ -14,6 +15,7 @@ export const useSettings = () => {
 
         try {
             const response = await api.get<AppSettings>('/settings');
+            setSettings(response.data);
             dispatch({ type: 'SET_SETTINGS', payload: response.data });
             return response.data;
         } catch (err: any) {
@@ -58,7 +60,21 @@ export const useSettings = () => {
         }
     }, [dispatch]);
 
+    useEffect(() => {
+        const loadSettings = async () => {
+            try {
+                const response = await api.get<AppSettings>('/settings');
+                setSettings(response.data);
+                dispatch({ type: 'SET_SETTINGS', payload: response.data });
+            } catch (err: any) {
+                setError(err.response?.data?.message || 'Failed to fetch settings');
+            }
+        };
+        loadSettings();
+    }, [dispatch]);
+
     return {
+        settings,
         loading,
         error,
         fetchSettings,

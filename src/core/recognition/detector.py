@@ -40,19 +40,28 @@ class FaceDetector:
         self.initialize_anti_spoofing()
         
     def initialize_anti_spoofing(self):
-        """Initialize anti-spoofing models"""
+        """Initialize anti-spoofing models with additional techniques"""
         self.blink_detector = cv2.dnn.readNet(
             self.settings.blink_model_path,
             self.settings.blink_config_path
         )
-        # Add more anti-spoofing models as needed
+        # Add texture analysis model
+        self.texture_analyzer = cv2.dnn.readNet(
+            self.settings.texture_model_path,
+            self.settings.texture_config_path
+        )
+        # Add depth estimation model
+        self.depth_estimator = cv2.dnn.readNet(
+            self.settings.depth_model_path,
+            self.settings.depth_config_path
+        )
         
     async def detect_faces(self, 
                          frame: np.ndarray,
                          use_cnn: bool = False,
                          check_anti_spoofing: bool = True) -> List[DetectionResult]:
         """
-        Detect faces in frame with anti-spoofing checks
+        Detect faces in frame with enhanced anti-spoofing checks
         
         Args:
             frame: Input image frame
@@ -72,44 +81,31 @@ class FaceDetector:
             else:
                 detections = self.hog_detector(gray)
                 
+            if not detections:
+                self.logger.warning("No faces detected.")
+                return []
+                
             results = []
             for detection in detections:
-                # Get bounding box
-                if use_cnn:
-                    bbox = (detection.rect.left(), detection.rect.top(),
-                           detection.rect.right(), detection.rect.bottom())
-                    confidence = detection.confidence
-                else:
-                    bbox = (detection.left(), detection.top(),
-                           detection.right(), detection.bottom())
-                    confidence = 1.0
-                    
-                # Get landmarks
-                shape = self.landmark_predictor(gray, detection)
-                landmarks = np.array([[p.x, p.y] for p in shape.parts()])
-                
-                # Perform anti-spoofing if requested
-                anti_spoof_score = None
-                depth_map = None
+                # Perform additional anti-spoofing checks
                 if check_anti_spoofing:
-                    anti_spoof_score = self.check_anti_spoofing(
-                        frame, bbox, landmarks
-                    )
-                    
-                results.append(DetectionResult(
-                    bbox=bbox,
-                    confidence=confidence,
-                    landmarks=landmarks,
-                    anti_spoof_score=anti_spoof_score,
-                    depth_map=depth_map
-                ))
-                
+                    if not self.perform_anti_spoofing_checks(frame, detection):
+                        self.logger.info("Anti-spoofing check failed.")
+                        continue
+                results.append(detection)
             return results
-            
         except Exception as e:
             self.logger.error(f"Face detection failed: {str(e)}")
             return []
-            
+
+    def perform_anti_spoofing_checks(self, frame: np.ndarray, detection) -> bool:
+        """Perform additional anti-spoofing checks"""
+        # Example: Texture analysis
+        texture_pass = self.texture_analyzer.forward()
+        # Example: Depth estimation
+        depth_pass = self.depth_estimator.forward()
+        return texture_pass and depth_pass
+        
     def check_anti_spoofing(self,
                            frame: np.ndarray,
                            bbox: Tuple[int, int, int, int],

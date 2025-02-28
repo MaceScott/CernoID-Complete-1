@@ -1,63 +1,102 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useEffect, useState, useMemo, Fragment } from 'react'
-import { WebSocket } from 'ws'
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useMemo,
+  ReactNode,
+} from "react";
 
 interface WebSocketMessage {
-  type: 'alert' | 'camera_status' | 'system_status'
-  data: any
+  type: "alert" | "camera_status" | "system_status";
+  data: any;
 }
 
 interface WebSocketContextType {
   send: (message: string) => void;
   close: () => void;
   lastMessage: string | null;
+  messages: string[];
+  isConnected: boolean;
 }
 
-const WebSocketContext = createContext<WebSocketContextType | null>(null);
+// ✅ Export the WebSocket Context
+export const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
-let wsClient: WebSocket | null = null;
-
-if (typeof window !== 'undefined') {
-  wsClient = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:5000/ws');
+interface WebSocketProviderProps {
+  children: ReactNode;
+  customUrl?: string;
 }
 
-export function useWebSocket() {
-  const context = useContext(WebSocketContext);
-  if (!context) {
-    throw new Error('useWebSocket must be used within a WebSocketProvider');
-  }
-  return context;
-}
+export function WebSocketProvider({ children, customUrl }: WebSocketProviderProps) {
+  const [wsClient, setWsClient] = useState<WebSocket | null>(null);
+  const [lastMessage, setLastMessage] = useState<string | null>(null);
+  const [messages, setMessages] = useState<string[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
-export function WebSocketProvider({ children }: { children: React.ReactNode }) {
-  const [lastMessage, setLastMessage] = React.useState<string | null>(null);
+  useEffect(() => {
+    const wsUrl = customUrl || process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
 
-  React.useEffect(() => {
-    if (!wsClient) return;
+    let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
 
-    wsClient.onmessage = (event) => {
-      setLastMessage(event.data);
+    const connectWebSocket = () => {
+      ws = new WebSocket(wsUrl);
+      setWsClient(ws);
+
+      ws.onopen = () => {
+        console.log("WebSocket connected:", wsUrl);
+        setIsConnected(true);
+        setReconnectAttempts(0);
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          setLastMessage(event.data);
+          setMessages((prev) => [...prev, event.data]);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        setIsConnected(false);
+      };
+
+      ws.onclose = () => {
+        console.warn("WebSocket closed, attempting to reconnect...");
+        setIsConnected(false);
+        if (reconnectAttempts < 5) {
+          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+          setReconnectAttempts((prev) => prev + 1);
+        } else {
+          console.error("Max WebSocket reconnect attempts reached.");
+        }
+      };
     };
+
+    connectWebSocket();
 
     return () => {
-      wsClient?.close();
+      if (ws) {
+        ws.close();
+      }
+      clearTimeout(reconnectTimeout);
     };
-  }, []);
+  }, [customUrl]);
 
-  const wsValue = useMemo(() => {
-    if (!wsClient) return null;
-    
-    return {
+  const wsValue = useMemo<WebSocketContextType>(
+    () => ({
       send: (message: string) => wsClient?.send(message),
       close: () => wsClient?.close(),
-      lastMessage
-    };
-  }, [lastMessage]);
-
-  if (!wsValue) {
-    return <>{children}</>;
-  }
+      lastMessage,
+      messages,
+      isConnected,
+    }),
+    [wsClient, lastMessage, messages, isConnected]
+  );
 
   return (
     <WebSocketContext.Provider value={wsValue}>
@@ -66,19 +105,33 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useWebSocketMessage<T>(type: WebSocketMessage['type']) {
-  const ws = useWebSocket()
-  const [message, setMessage] = useState<T | null>(null)
+export function useWebSocket() {
+  const context = useContext(WebSocketContext);
+  if (!context) {
+    throw new Error("useWebSocket must be used within a WebSocketProvider");
+  }
+  return context;
+}
+
+export function useWebSocketMessage<T>(type: WebSocketMessage["type"]) {
+  const { messages } = useWebSocket();
+  const [message, setMessage] = useState<T | null>(null);
 
   useEffect(() => {
-    const unsubscribe = ws.subscribe((msg) => {
-      if (msg.type === type) {
-        setMessage(msg.data)
+    const lastMsg = messages.find((msg) => {
+      try {
+        const parsed = JSON.parse(msg);
+        return parsed.type === type;
+      } catch {
+        return false;
       }
-    })
-    return unsubscribe
-  }, [ws, type])
+    });
 
-  return message
-} 
-} 
+    if (lastMsg) {
+      setMessage(JSON.parse(lastMsg).data);
+    }
+  }, [messages, type]);
+
+  return message;
+}
+

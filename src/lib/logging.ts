@@ -33,11 +33,14 @@ export const logger = winston.createLogger({
       clientOpts: {
         node: process.env.ELASTICSEARCH_URL,
         auth: {
-          username: process.env.ELASTICSEARCH_USERNAME,
-          password: process.env.ELASTICSEARCH_PASSWORD,
+          username: process.env.ELASTICSEARCH_USERNAME || "default_username",
+          password: process.env.ELASTICSEARCH_PASSWORD || "default_password",
         },
       },
       indexPrefix: 'surveillance-logs',
+      apm: {
+        // Add appropriate APM configuration here
+      }
     })
   ]
 }) 

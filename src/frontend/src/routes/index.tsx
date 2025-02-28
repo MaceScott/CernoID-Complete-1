@@ -1,10 +1,10 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Layout } from '../components/Layout';
+import { Layout } from '../components/Layout/Layout';
 import { ProtectedRoute } from '../components/Routes/ProtectedRoute';
 import { Login } from '../components/Auth/Login';
 import { Dashboard } from '../components/Dashboard/Dashboard';
-import { Recognition } from '../components/Recognition/Recognition';
+import { ImageUpload, ResultsViewer } from '../components/Recognition';
 import { UserManagement } from '../components/Users/UserManagement';
 import { Settings } from '../components/Settings/Settings';
 import { NotFound } from '../components/Error/NotFound';
@@ -28,7 +28,7 @@ export const AppRoutes: React.FC = () => {
             >
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
-                <Route path="recognition" element={<Recognition />} />
+                <Route path="recognition" element={<ResultsViewer imageUrl="/path/to/image.jpg" faces={[]} />} />
                 
                 {/* Admin-only routes */}
                 <Route

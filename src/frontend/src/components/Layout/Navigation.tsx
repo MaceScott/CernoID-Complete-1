@@ -11,6 +11,7 @@ import {
     ListItem,
     ListItemIcon,
     ListItemText,
+    ListItemButton,
     useMediaQuery,
     useTheme
 } from '@mui/material';
@@ -25,8 +26,13 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
-export const Navigation: React.FC = () => {
-    const [drawerOpen, setDrawerOpen] = React.useState(false);
+interface NavigationProps {
+    open: boolean;
+    onClose: () => void;
+    onOpen: () => void;
+}
+
+export const Navigation: React.FC<NavigationProps> = ({ open, onClose, onOpen }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const theme = useTheme();
@@ -42,7 +48,7 @@ export const Navigation: React.FC = () => {
     const handleNavigation = (path: string) => {
         navigate(path);
         if (isMobile) {
-            setDrawerOpen(false);
+            onClose();
         }
     };
 
@@ -50,8 +56,8 @@ export const Navigation: React.FC = () => {
         <Box sx={{ width: 250 }}>
             <List>
                 {menuItems.map((item) => (
-                    <ListItem 
-                        button 
+                    <ListItemButton 
+                        component="button"
                         key={item.text}
                         onClick={() => handleNavigation(item.path)}
                         sx={{
@@ -64,7 +70,7 @@ export const Navigation: React.FC = () => {
                             {item.icon}
                         </ListItemIcon>
                         <ListItemText primary={item.text} />
-                    </ListItem>
+                    </ListItemButton>
                 ))}
             </List>
         </Box>
@@ -77,7 +83,7 @@ export const Navigation: React.FC = () => {
                     <IconButton
                         color="inherit"
                         edge="start"
-                        onClick={() => setDrawerOpen(true)}
+                        onClick={onOpen}
                         sx={{ mr: 2, display: { md: 'none' } }}
                     >
                         <MenuIcon />
@@ -115,8 +121,8 @@ export const Navigation: React.FC = () => {
 
             <Drawer
                 variant={isMobile ? "temporary" : "permanent"}
-                open={isMobile ? drawerOpen : true}
-                onClose={() => setDrawerOpen(false)}
+                open={isMobile ? open : true}
+                onClose={onClose}
                 sx={{
                     '& .MuiDrawer-paper': {
                         width: 250,

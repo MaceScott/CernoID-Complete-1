@@ -1,27 +1,20 @@
-"""
-Database connection management with connection pooling.
-"""
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession
-from .service import DatabaseService
+from sqlalchemy import create_engine
+from contextlib import contextmanager
 
-# Global database service instance
-db_service = DatabaseService()
+class DatabasePool:
+    def __init__(self, url: str, pool_size: int = 20):
+        self.engine = create_engine(
+            url,
+            pool_size=pool_size,
+            max_overflow=5,
+            pool_timeout=30,
+            pool_recycle=1800
+        )
 
-@asynccontextmanager
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Get database session from connection pool.
-    To be used as FastAPI dependency.
-    """
-    async with db_service.session() as session:
-        yield session
-
-async def initialize_database():
-    """Initialize database on application startup."""
-    await db_service.initialize()
-
-async def cleanup_database():
-    """Cleanup database connections on application shutdown."""
-    await db_service.cleanup() 
+    @contextmanager
+    def get_connection(self):
+        conn = self.engine.connect()
+        try:
+            yield conn
+        finally:
+            conn.close() 

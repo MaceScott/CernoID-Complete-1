@@ -1,62 +1,54 @@
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, List, Dict
-from enum import Enum
-from core.events.manager import EventManager
-from core.error_handling import handle_exceptions
-
-class AlertPriority(Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-@dataclass
-class SecurityAlert:
-    id: str
-    timestamp: datetime
-    priority: AlertPriority
-    alert_type: str
-    description: str
-    camera_id: Optional[int]
-    face_data: Optional[Dict]
-    location: Optional[str]
-    processed: bool = False
+﻿from typing import Dict, Any
+from .models.alert import Alert
+from .handlers.base import AlertHandler
+from .services.real_time import RealTimeNotifier
+from .channels import EmailChannel, PushChannel, SMSChannel
+from ..config.settings import Settings
 
 class AlertManager:
-    def __init__(self):
-        self.event_manager = EventManager()
-        self.active_alerts: List[SecurityAlert] = []
-        self.initialize_handlers()
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.handlers: Dict[str, AlertHandler] = {}
+        self.channels: Dict[str, Any] = {}
+        self.real_time = RealTimeNotifier()
+        self._initialize()
 
-    @handle_exceptions(logger=alert_logger.error)
-    async def initialize_handlers(self):
-        await self.event_manager.subscribe('face_detected', self._handle_face_detection)
-        await self.event_manager.subscribe('unauthorized_access', self._handle_unauthorized)
-        await self.event_manager.subscribe('suspicious_behavior', self._handle_suspicious)
+    def _initialize(self):
+        if not self.settings.alert_preferences['enabled']:
+            return
 
-    async def create_alert(self, alert: SecurityAlert):
-        self.active_alerts.append(alert)
-        await self.event_manager.publish(Event(
-            type='new_alert',
-            data={'alert': alert}
-        ))
-        
-        if alert.priority in [AlertPriority.HIGH, AlertPriority.CRITICAL]:
-            await self._send_immediate_notification(alert)
+        self._setup_channels()
+        self._setup_handlers()
 
-    async def _handle_face_detection(self, event: Event):
-        if not event.data.get('match'):
-            await self.create_alert(SecurityAlert(
-                id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
-                priority=AlertPriority.MEDIUM,
-                alert_type="unrecognized_face",
-                description="Unrecognized person detected",
-                camera_id=event.data.get('camera_id'),
-                face_data=event.data.get('face_data')
-            ))
+    def _setup_channels(self):
+        channel_map = {
+            'EMAIL': EmailChannel,
+            'PUSH': PushChannel,
+            'SMS': SMSChannel
+        }
 
-    async def _send_immediate_notification(self, alert: SecurityAlert):
-        # Implementation for immediate notifications (SMS, Email, etc.)
-        pass 
+        for channel_type in self.settings.alert_preferences['channels']:
+            if channel_type in channel_map:
+                self.channels[channel_type] = channel_map[channel_type](self.settings)
+
+    def _setup_handlers(self):
+        # Initialize handlers based on settings
+        pass
+
+    async def send_alert(self, alert: Alert):
+        if not self._should_send_alert(alert):
+            return
+
+        for channel in self.channels.values():
+            await channel.send(alert)
+
+        await self.real_time.notify(alert)
+
+    def _should_send_alert(self, alert: Alert) -> bool:
+        if not self.settings.alert_preferences['enabled']:
+            return False
+
+        if alert.severity < self.settings.alert_preferences['minSeverity']:
+            return False
+
+        return True

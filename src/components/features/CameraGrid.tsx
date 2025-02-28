@@ -1,55 +1,58 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Camera } from "@/types"
-import { useWebSocketMessage } from "@/lib/websocket"
-import { Card, CardHeader, CardContent } from "@/components/ui/card"
-import { Alert } from "@/components/ui/alert"
-import { Camera as CameraIcon, AlertTriangle, Wifi, WifiOff } from "lucide-react"
+import { useState, useEffect } from "react";
+import { Camera } from "@/types";
+import { useWebSocketMessage } from "@/lib/websocket";
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import Alert from "@/components/ui/Alert";
+import { Camera as CameraIcon, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 
 interface CameraGridProps {
-  initialCameras: Camera[]
-  columns: 2 | 3 | 4
+  initialCameras: Camera[];
+  columns: 2 | 3 | 4;
 }
 
 export function CameraGrid({ initialCameras, columns }: CameraGridProps) {
-  const [cameras, setCameras] = useState(initialCameras)
-  const statusUpdate = useWebSocketMessage<{ id: string; status: string }>('camera_status')
+  const [cameras, setCameras] = useState(initialCameras);
+  const statusUpdate = useWebSocketMessage<{ id: string; status: string }>("camera_status");
 
   useEffect(() => {
     if (statusUpdate) {
-      setCameras(prev => prev.map(camera => 
-        camera.id === statusUpdate.id 
-          ? { ...camera, status: statusUpdate.status }
-          : camera
-      ))
+      const validStatuses: Array<Camera['status']> = ['active', 'inactive'];
+      if (validStatuses.includes(statusUpdate.status as Camera['status'])) {
+        setCameras((prev) =>
+          prev.map((camera) =>
+            camera.id === statusUpdate.id ? { ...camera, status: statusUpdate.status as Camera['status'] } : camera
+          )
+        );
+      }
     }
-  }, [statusUpdate])
+  }, [statusUpdate]);
 
-  const [streams, setStreams] = useState<Record<string, boolean>>({})
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [streams, setStreams] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     // Simulate stream connections
-    const newStreams: Record<string, boolean> = {}
-    cameras.forEach(camera => {
-      newStreams[camera.id] = camera.status === "active"
-    })
-    setStreams(newStreams)
-  }, [cameras])
+    const newStreams: Record<string, boolean> = {};
+    cameras.forEach((camera) => {
+      newStreams[camera.id] = camera.status === "active";
+    });
+    setStreams(newStreams);
+  }, [cameras]);
 
   const handleStreamError = (cameraId: string) => {
-    setErrors(prev => ({
+    setErrors((prev) => ({
       ...prev,
-      [cameraId]: "Stream connection failed"
-    }))
-  }
+      [cameraId]: "Stream connection failed",
+    }));
+  };
 
   return (
     <div
       className="grid gap-4"
       style={{
-        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       }}
     >
       {cameras.map((camera) => (
@@ -73,9 +76,7 @@ export function CameraGrid({ initialCameras, columns }: CameraGridProps) {
                 streams[camera.id] ? (
                   <div className="flex h-full items-center justify-center">
                     {/* Replace with actual video stream component */}
-                    <div className="text-sm text-gray-400">
-                      Live Stream
-                    </div>
+                    <div className="text-sm text-gray-400">Live Stream</div>
                   </div>
                 ) : (
                   <div className="flex h-full items-center justify-center">
@@ -89,14 +90,9 @@ export function CameraGrid({ initialCameras, columns }: CameraGridProps) {
                 </div>
               )}
             </div>
-            {errors[camera.id] && (
-              <Alert variant="error" className="m-2">
-                {errors[camera.id]}
-              </Alert>
-            )}
           </CardContent>
         </Card>
       ))}
     </div>
-  )
-} 
+  );
+}
