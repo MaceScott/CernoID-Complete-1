@@ -22,7 +22,7 @@ def get_stored_encodings():
         return _process_stored_faces(stored_faces)
 
     except psycopg2.Error as e:
-        logging.error(f"❌ Database Error: {e}")
+        logging.error(f"Database connection failed: {e}")
         return [], []
 
 
@@ -143,6 +143,9 @@ def _detect_and_match_faces(frame, known_encodings, known_names):
         match_name = match_face(face_encoding, known_encodings, known_names)
         label = match_name if match_name else "Unidentified"
         identified_faces.append((label, face_locations[i]))
+
+    # Enhanced logging for face detection and matching
+    logging.info(f"Detected {len(face_encodings)} faces in current frame.")
 
     return identified_faces
 

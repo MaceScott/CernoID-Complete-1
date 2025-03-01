@@ -1,6 +1,7 @@
 from typing import Dict, Optional, Any, List, Union, Type, ClassVar
 from datetime import datetime
 import json
+import logging
 
 class Model:
     """Base database model"""
@@ -70,22 +71,23 @@ class Model:
                     connection: Optional[str] = None) -> 'Model':
         """Create new model"""
         conn = cls._get_connection(connection)
-        
-        # Add timestamps
+
         if cls.__timestamps__:
             now = datetime.utcnow()
             data['created_at'] = now
             data['updated_at'] = now
-            
-        # Build query
+
         fields = ', '.join(data.keys())
         placeholders = ', '.join(['?' for _ in data])
         query = f"INSERT INTO {cls.__table__} ({fields}) VALUES ({placeholders})"
-        
-        # Execute query
-        await conn.execute(query, tuple(data.values()))
-        
-        return cls(**data)
+
+        try:
+            await conn.execute(query, tuple(data.values()))
+            logging.info(f"Model created successfully in table {cls.__table__}.")
+            return cls(**data)
+        except Exception as e:
+            logging.error(f"Failed to create model in table {cls.__table__}: {str(e)}")
+            raise
 
     async def update(self,
                     data: Optional[Dict] = None,

@@ -105,43 +105,54 @@ class PermissionManager(BaseComponent):
 
     @handle_errors(logger=None)
     async def has_permission(self,
-                           user_id: str,
-                           permission: str) -> bool:
-        """Check if user has permission"""
-        # Get user roles
-        db = self.app.get_component('database')
-        roles = await db.fetch_all(
-            "SELECT role FROM user_roles WHERE user_id = $1",
-            user_id
-        )
-        
-        user_roles = {r['role'] for r in roles}
-        
-        # Check permission in roles
-        for role in user_roles:
-            if permission in self._roles.get(role, set()):
-                return True
-                
-            # Check inherited roles
-            inherited = self._role_hierarchy.get(role, set())
-            for inherited_role in inherited:
-                if permission in self._roles.get(inherited_role, set()):
+                             user_id: str,
+                             permission: str) -> bool:
+        try:
+            db = self.app.get_component('database')
+            roles = await db.fetch_all(
+                "SELECT role FROM user_roles WHERE user_id = $1",
+                user_id
+            )
+
+            user_roles = {r['role'] for r in roles}
+
+            for role in user_roles:
+                if permission in self._roles.get(role, set()):
+                    self.logger.info(f"Permission '{permission}' found for user '{user_id}' in role '{role}'")
                     return True
-                    
-        return False
+
+                inherited = self._role_hierarchy.get(role, set())
+                for inherited_role in inherited:
+                    if permission in self._roles.get(inherited_role, set()):
+                        self.logger.info(f"Permission '{permission}' inherited for user '{user_id}' from role '{inherited_role}'")
+                        return True
+
+            self.logger.warning(f"Permission '{permission}' not found for user '{user_id}'")
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Permission check failed for user '{user_id}': {str(e)}")
+            raise
 
     @handle_errors(logger=None)
     async def has_role(self,
-                      user_id: str,
-                      role: str) -> bool:
-        """Check if user has role"""
-        db = self.app.get_component('database')
-        result = await db.fetch_one(
-            "SELECT 1 FROM user_roles WHERE user_id = $1 AND role = $2",
-            user_id,
-            role
-        )
-        return bool(result)
+                       user_id: str,
+                       role: str) -> bool:
+        try:
+            db = self.app.get_component('database')
+            result = await db.fetch_one(
+                "SELECT 1 FROM user_roles WHERE user_id = $1 AND role = $2",
+                user_id,
+                role
+            )
+            if result:
+                self.logger.info(f"User '{user_id}' has role '{role}'")
+            else:
+                self.logger.warning(f"User '{user_id}' does not have role '{role}'")
+            return bool(result)
+        except Exception as e:
+            self.logger.error(f"Role check failed for user '{user_id}': {str(e)}")
+            raise
 
     async def grant_permission(self,
                              role: str,
@@ -200,33 +211,25 @@ class PermissionManager(BaseComponent):
         """Load roles from storage"""
         try:
             db = self.app.get_component('database')
-            records = await db.fetch_all(
-                "SELECT role, permissions FROM roles"
-            )
-            
+            records = await db.fetch_all("SELECT role, permissions FROM roles")
             for record in records:
-                self._roles[record['role']] = set(
-                    record['permissions']
-                )
-                
+                self._roles[record['role']] = set(record['permissions'])
+            self.logger.info("Roles loaded successfully")
         except Exception as e:
             self.logger.error(f"Failed to load roles: {str(e)}")
+            raise
 
     async def _load_permissions(self) -> None:
         """Load permissions from storage"""
         try:
             db = self.app.get_component('database')
-            records = await db.fetch_all(
-                "SELECT name, description FROM permissions"
-            )
-            
+            records = await db.fetch_all("SELECT name, description FROM permissions")
             for record in records:
                 self._permissions[record['name']] = record['description']
-                
+            self.logger.info("Permissions loaded successfully")
         except Exception as e:
-            self.logger.error(
-                f"Failed to load permissions: {str(e)}"
-            )
+            self.logger.error(f"Failed to load permissions: {str(e)}")
+            raise
 
     async def _save_roles(self) -> None:
         """Save roles to storage"""

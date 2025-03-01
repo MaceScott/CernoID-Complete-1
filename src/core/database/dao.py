@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update, delete
 from core.database.models import Base
+import logging
 
 class BaseDAO:
     """Base Data Access Object for database operations"""
@@ -13,11 +14,16 @@ class BaseDAO:
 
     async def create(self, **kwargs) -> Base:
         """Create a new record"""
-        instance = self.model(**kwargs)
-        self.session.add(instance)
-        await self.session.commit()
-        await self.session.refresh(instance)
-        return instance
+        try:
+            instance = self.model(**kwargs)
+            self.session.add(instance)
+            await self.session.commit()
+            await self.session.refresh(instance)
+            logging.info(f"Record created successfully: {instance}")
+            return instance
+        except Exception as e:
+            logging.error(f"Failed to create record: {str(e)}")
+            raise
 
     async def get_by_id(self, id: int) -> Optional[Base]:
         """Get record by ID"""

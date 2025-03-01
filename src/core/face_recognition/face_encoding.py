@@ -53,6 +53,10 @@ def encode_faces(image_path):
         landmarks = shape_predictor(gray, face)
         encoding = np.array(face_recognizer.compute_face_descriptor(image, landmarks))
         encodings.append(encoding)
+
+    # Enhanced logging for face detection and encoding
+    logger.info(f"Detected {len(faces)} faces in image {image_path}")
+
     return encodings
 
 
@@ -61,7 +65,12 @@ def add_encodings_to_index(encodings):
     Add face encodings to the FAISS index.
     """
     if encodings:
-        index.add(np.array(encodings, dtype='float32'))
+        try:
+            index.add(np.array(encodings, dtype='float32'))
+            logger.info(f"Successfully added {len(encodings)} encodings to FAISS index.")
+        except Exception as e:
+            logger.error(f"Failed to add encodings to FAISS index: {e}")
+            raise
 
 
 def search_similar_faces(query_encoding, k=5):

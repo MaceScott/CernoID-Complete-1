@@ -66,10 +66,19 @@ class TokenManager:
 
     @handle_errors(logger=None)
     def verify_token(self, token: str, verify_exp: bool = True) -> Dict:
-        if token in self._blacklist:
-            raise jwt.InvalidTokenError("Token is blacklisted")
-        return jwt.decode(token, self._secret_key, algorithms=['HS256'],
-                        options={'verify_exp': verify_exp})
+        try:
+            if token in self._blacklist:
+                self.logger.warning(f"Attempt to use blacklisted token: {token}")
+                raise jwt.InvalidTokenError("Token is blacklisted")
+
+            decoded_token = jwt.decode(token, self._secret_key, algorithms=['HS256'],
+                                       options={'verify_exp': verify_exp})
+            self.logger.info("Token verified successfully")
+            return decoded_token
+
+        except jwt.InvalidTokenError as e:
+            self.logger.error(f"Token verification failed: {str(e)}")
+            raise
 
     def blacklist_token(self, token: str) -> None:
         self._blacklist[token] = datetime.utcnow() + timedelta(seconds=self._token_ttl)
@@ -214,7 +223,15 @@ class SecurityManager(BaseComponent):
                 await asyncio.sleep(60)
 
     async def cleanup(self) -> None:
-        """Cleanup security resources"""
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-        await self._redis.close() 
+        try:
+            if self._cleanup_task:
+                self._cleanup_task.cancel()
+                await self._cleanup_task
+            if self._redis:
+                await self._redis.close()
+            self.logger.info("Security resources cleaned up successfully")
+        except asyncio.CancelledError:
+            self.logger.info("Cleanup task cancelled successfully")
+        except Exception as e:
+            self.logger.error(f"Security cleanup failed: {str(e)}")
+            raise 

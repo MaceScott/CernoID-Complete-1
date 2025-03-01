@@ -21,25 +21,31 @@ class MovementAnalyzer:
         
     @handle_exceptions(logger=movement_logger.error)
     async def analyze_sequence(self, frame_sequence: List[np.ndarray]) -> List[Dict]:
-        movement_data = []
-        
-        # Track movement patterns for each detected person
-        tracked_objects = await self._track_objects(frame_sequence)
-        
-        for person_id, tracks in tracked_objects.items():
-            # Analyze velocity and acceleration
-            velocity = self._calculate_velocity(tracks)
-            acceleration = self._calculate_acceleration(tracks)
+        try:
+            movement_data = []
             
-            # Check for specific patterns
-            patterns = await self._detect_patterns(
-                tracks, velocity, acceleration
-            )
+            # Track movement patterns for each detected person
+            tracked_objects = await self._track_objects(frame_sequence)
             
-            if patterns:
-                movement_data.extend(patterns)
+            for person_id, tracks in tracked_objects.items():
+                # Analyze velocity and acceleration
+                velocity = self._calculate_velocity(tracks)
+                acceleration = self._calculate_acceleration(tracks)
                 
-        return movement_data
+                # Check for specific patterns
+                patterns = await self._detect_patterns(
+                    tracks, velocity, acceleration
+                )
+                
+                if patterns:
+                    movement_data.extend(patterns)
+                
+            movement_logger.info("Frame sequence analyzed successfully")
+            return movement_data
+
+        except Exception as e:
+            movement_logger.error(f"Frame sequence analysis failed: {str(e)}")
+            raise
 
     async def _detect_patterns(
         self, 
@@ -76,20 +82,23 @@ class MovementAnalyzer:
         return patterns
 
     async def _check_loitering(self, tracks: List[Dict]) -> bool:
-        if len(tracks) < 2:
+        try:
+            if len(tracks) < 2:
+                return False
+
+            start_time = tracks[0]['timestamp']
+            end_time = tracks[-1]['timestamp']
+            duration = end_time - start_time
+
+            if duration >= self.loitering_threshold:
+                positions = [t['location'] for t in tracks]
+                max_distance = self._calculate_max_distance(positions)
+                return max_distance < 100
+
             return False
-            
-        start_time = tracks[0]['timestamp']
-        end_time = tracks[-1]['timestamp']
-        duration = end_time - start_time
-        
-        if duration >= self.loitering_threshold:
-            # Check if person stayed within a small area
-            positions = [t['location'] for t in tracks]
-            max_distance = self._calculate_max_distance(positions)
-            return max_distance < 100  # pixels
-            
-        return False
+        except Exception as e:
+            movement_logger.error(f"Loitering check failed: {str(e)}")
+            return False
 
     async def _check_fight_behavior(
         self, 

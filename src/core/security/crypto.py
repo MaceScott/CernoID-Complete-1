@@ -31,31 +31,40 @@ class CryptoManager(BaseComponent):
 
     async def cleanup(self) -> None:
         """Cleanup crypto manager"""
-        self._key = None
-        self._fernet = None
+        try:
+            self._key = None
+            self._fernet = None
+            self.logger.info("Crypto manager resources cleaned up successfully")
+        except Exception as e:
+            self.logger.error(f"Crypto manager cleanup failed: {str(e)}")
+            raise
 
     def encrypt(self, data: str) -> str:
         """Encrypt data"""
         if not self._fernet:
+            self.logger.error("Crypto manager not initialized")
             raise SecurityError("Crypto manager not initialized")
             
         try:
-            return self._fernet.encrypt(
-                data.encode()
-            ).decode()
+            encrypted_data = self._fernet.encrypt(data.encode()).decode()
+            self.logger.info("Data encrypted successfully")
+            return encrypted_data
         except Exception as e:
+            self.logger.error(f"Encryption failed: {str(e)}")
             raise SecurityError(f"Encryption failed: {str(e)}")
 
     def decrypt(self, data: str) -> str:
         """Decrypt data"""
         if not self._fernet:
+            self.logger.error("Crypto manager not initialized")
             raise SecurityError("Crypto manager not initialized")
             
         try:
-            return self._fernet.decrypt(
-                data.encode()
-            ).decode()
+            decrypted_data = self._fernet.decrypt(data.encode()).decode()
+            self.logger.info("Data decrypted successfully")
+            return decrypted_data
         except Exception as e:
+            self.logger.error(f"Decryption failed: {str(e)}")
             raise SecurityError(f"Decryption failed: {str(e)}")
 
     def _generate_key(self) -> bytes:
@@ -75,15 +84,19 @@ class CryptoManager(BaseComponent):
         """Load key from file"""
         try:
             with open(path, 'rb') as f:
-                return base64.urlsafe_b64decode(f.read())
+                key = base64.urlsafe_b64decode(f.read())
+                self.logger.info(f"Key loaded successfully from file: {path}")
+                return key
         except Exception as e:
+            self.logger.error(f"Failed to load key from file {path}: {str(e)}")
             raise SecurityError(f"Failed to load key from file: {str(e)}")
 
     def _load_key_from_env(self, env_var: str) -> bytes:
         """Load key from environment variable"""
         try:
-            return base64.urlsafe_b64decode(os.environ[env_var])
+            key = base64.urlsafe_b64decode(os.environ[env_var])
+            self.logger.info(f"Key loaded successfully from environment variable: {env_var}")
+            return key
         except Exception as e:
-            raise SecurityError(
-                f"Failed to load key from environment: {str(e)}"
-            ) 
+            self.logger.error(f"Failed to load key from environment variable {env_var}: {str(e)}")
+            raise SecurityError(f"Failed to load key from environment: {str(e)}") 

@@ -3,11 +3,12 @@ from typing import Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+import logging
 
 Base = declarative_base()
 
 class User(Base):
-    """User model for authentication"""
+    """User model for authentication and authorization."""
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -18,6 +19,10 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime)
     metadata = Column(JSON)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        logging.info(f"User model initialized with username: {self.username}")
 
 class FaceEncoding(Base):
     """Face encoding storage"""

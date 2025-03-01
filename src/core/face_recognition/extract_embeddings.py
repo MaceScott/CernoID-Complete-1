@@ -5,6 +5,8 @@ import numpy as np
 from pathlib import Path
 import traceback
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Ensure the project root is in sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -30,6 +32,21 @@ if not input_folder.is_dir():
 # Import encode_faces correctly
 from app.face_recognition.face_encoding import encode_faces
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def process_image(image_path):
+    try:
+        face_encodings = encode_faces(str(image_path))
+        if face_encodings:
+            logger.info(f"Successfully processed {image_path}")
+            return image_path.name, face_encodings[0].tolist()
+        else:
+            logger.warning(f"No face detected in {image_path}")
+            return None
+    except Exception as e:
+        logger.error(f"Error processing {image_path}: {e}")
+        return None
 
 def extract_embeddings(image_folder, output_file):
     """
@@ -40,26 +57,19 @@ def extract_embeddings(image_folder, output_file):
     """
     embeddings = {}
     VALID_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp')
-    images = [f for f in os.listdir(image_folder) if f.lower().endswith(VALID_EXTENSIONS)]
+    images = [Path(image_folder) / f for f in os.listdir(image_folder) if f.lower().endswith(VALID_EXTENSIONS)]
 
-    for image_name in images:
-        image_path = Path(image_folder) / image_name
-        try:
-            # Generate embeddings using the encode_faces function
-            face_encodings = encode_faces(str(image_path))
-            if face_encodings:
-                embeddings[image_name] = face_encodings[
-                    0].tolist()  # Convert numpy array to list for JSON serialization
-            else:
-                print(f"No face detected in {image_name}")
-        except Exception as e:
-            print(f"Error processing {image_name}: {e}")
-            traceback.print_exc()
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(process_image, image): image for image in images}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                image_name, encoding = result
+                embeddings[image_name] = encoding
 
-    # Save embeddings to the output file
     with open(output_file, "w") as f:
         json.dump(embeddings, f)
-    print(f"Embeddings saved to {output_file}")
+    logger.info(f"Embeddings saved to {output_file}")
 
 
 if __name__ == "__main__":

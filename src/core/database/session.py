@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
+import logging
 
 class DatabaseSession:
     """Database session management"""
@@ -18,15 +19,21 @@ class DatabaseSession:
             class_=AsyncSession,
             expire_on_commit=False
         )
+        self.logger = logging.getLogger(__name__)
 
     @asynccontextmanager
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         """Get database session"""
         session: AsyncSession = self.SessionLocal()
         try:
+            self.logger.info("Database session created successfully.")
             yield session
+        except Exception as e:
+            self.logger.error(f"Database session error: {str(e)}")
+            raise
         finally:
             await session.close()
+            self.logger.info("Database session closed successfully.")
 
     async def create_all(self):
         """Create all database tables"""

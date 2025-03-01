@@ -103,6 +103,8 @@ class DatabaseBackup:
                     backup_file.unlink()
                     self.logger.info(f"Removed old backup: {backup_file}")
 
+            self.logger.info("Old backups cleanup completed successfully.")
+
         except Exception as e:
             self.logger.error(f"Backup cleanup failed: {str(e)}")
             raise

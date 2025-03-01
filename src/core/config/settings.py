@@ -1,10 +1,14 @@
 """
 Enhanced configuration management with validation and environment handling.
 """
-from typing import Dict, Any, Optional
-from pydantic import BaseSettings, validator
+from typing import Dict, Any, Optional, List
+from pydantic import BaseSettings, validator, HttpUrl, SecretStr
 import json
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Environment(str):
     DEVELOPMENT = "development"
@@ -41,7 +45,7 @@ class Settings(BaseSettings):
     api_prefix: str = f"/api/{api_version}"
 
     # Security
-    jwt_secret_key: str
+    jwt_secret_key: SecretStr
     token_expire_minutes: int = 30
     allowed_hosts: List[str] = ["*"]
     cors_origins: List[str] = ["*"]
@@ -52,8 +56,19 @@ class Settings(BaseSettings):
     model_path: str = "models/recognition_model.dat"
 
     # Database
-    database_url: str
+    database_url: HttpUrl
     max_connections: int = 10
+
+    @validator("jwt_secret_key", "database_url", pre=True)
+    def validate_sensitive_settings(cls, v, field):
+        if not v:
+            logger.error(f"Missing required configuration for {field.name}")
+            raise ValueError(f"Missing required configuration for {field.name}")
+        return v
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        logger.info("Settings initialized successfully.")
 
     class Config:
         env_file = ".env"

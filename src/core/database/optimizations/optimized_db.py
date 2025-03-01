@@ -11,15 +11,20 @@ class OptimizedDatabase:
         self._setup_indexes()
 
     async def initialize(self):
-        self.pool = await asyncpg.create_pool(
-            self.config.get('database.url'),
-            min_size=5,
-            max_size=20,
-            command_timeout=60,
-            max_queries=50000,
-            max_cached_statement_lifetime=300,
-            max_keepalive_idle=300
-        )
+        try:
+            self.pool = await asyncpg.create_pool(
+                self.config.get('database.url'),
+                min_size=5,
+                max_size=20,
+                command_timeout=60,
+                max_queries=50000,
+                max_cached_statement_lifetime=300,
+                max_keepalive_idle=300
+            )
+            db_logger.info("Database connection pool initialized successfully.")
+        except Exception as e:
+            db_logger.error(f"Failed to initialize database connection pool: {str(e)}")
+            raise
 
     @handle_exceptions(logger=db_logger.error)
     async def _setup_indexes(self):

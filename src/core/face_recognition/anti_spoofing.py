@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 import os
+import logging
 
 # Load the pre-trained shape predictor model
 PREDICTOR_PATH = "path/to/shape_predictor_68_face_landmarks.dat"
@@ -16,7 +17,12 @@ model_path = os.getenv("LIVENESS_MODEL_PATH", "models/liveness_model.h5")
 if not os.path.isfile(model_path):
     raise FileNotFoundError(f"Liveness model not found at {model_path}")
 
-model = tf.keras.models.load_model(model_path)
+# Improved error handling for model loading
+try:
+    model = tf.keras.models.load_model(model_path)
+except Exception as e:
+    logging.error(f"Failed to load liveness model: {e}")
+    raise
 
 
 def detect_blink(eye_points, facial_landmarks):
@@ -34,6 +40,10 @@ def detect_blink(eye_points, facial_landmarks):
 
     # Calculate EAR
     ear = ver_line_length / hor_line_length
+
+    # Enhanced logging for blink detection
+    logging.info(f"Blink detected with EAR: {ear}")
+
     return ear
 
 
@@ -87,6 +97,7 @@ def process_video_feed(video_source=0):
     Process video feed and apply liveness detection.
     """
     cap = cv2.VideoCapture(video_source)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:

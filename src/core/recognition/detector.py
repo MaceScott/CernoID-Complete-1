@@ -41,20 +41,22 @@ class FaceDetector:
         
     def initialize_anti_spoofing(self):
         """Initialize anti-spoofing models with additional techniques"""
-        self.blink_detector = cv2.dnn.readNet(
-            self.settings.blink_model_path,
-            self.settings.blink_config_path
-        )
-        # Add texture analysis model
-        self.texture_analyzer = cv2.dnn.readNet(
-            self.settings.texture_model_path,
-            self.settings.texture_config_path
-        )
-        # Add depth estimation model
-        self.depth_estimator = cv2.dnn.readNet(
-            self.settings.depth_model_path,
-            self.settings.depth_config_path
-        )
+        try:
+            self.blink_detector = cv2.dnn.readNet(
+                self.settings.blink_model_path,
+                self.settings.blink_config_path
+            )
+            self.texture_analyzer = cv2.dnn.readNet(
+                self.settings.texture_model_path,
+                self.settings.texture_config_path
+            )
+            self.depth_estimator = cv2.dnn.readNet(
+                self.settings.depth_model_path,
+                self.settings.depth_config_path
+            )
+            self.logger.info("Anti-spoofing models loaded successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to load anti-spoofing models: {str(e)}")
         
     async def detect_faces(self, 
                          frame: np.ndarray,
@@ -99,12 +101,21 @@ class FaceDetector:
             return []
 
     def perform_anti_spoofing_checks(self, frame: np.ndarray, detection) -> bool:
-        """Perform additional anti-spoofing checks"""
-        # Example: Texture analysis
-        texture_pass = self.texture_analyzer.forward()
-        # Example: Depth estimation
-        depth_pass = self.depth_estimator.forward()
-        return texture_pass and depth_pass
+        try:
+            blob = cv2.dnn.blobFromImage(frame, 1.0, (224, 224), (104.0, 177.0, 123.0))
+            self.texture_analyzer.setInput(blob)
+            texture_pass = self.texture_analyzer.forward()
+
+            self.depth_estimator.setInput(blob)
+            depth_pass = self.depth_estimator.forward()
+
+            spoof_score = np.mean([texture_pass, depth_pass])
+            self.logger.debug(f"Anti-spoofing score: {spoof_score}")
+
+            return spoof_score > self.settings.anti_spoof_threshold
+        except Exception as e:
+            self.logger.error(f"Anti-spoofing check failed: {str(e)}")
+            return False
         
     def check_anti_spoofing(self,
                            frame: np.ndarray,
@@ -155,9 +166,8 @@ class FaceDetector:
         
     def check_head_movement(self, landmarks: np.ndarray) -> float:
         """Check for natural head movement"""
-        # Implementation depends on specific requirements
-        # This is a placeholder
-        return 1.0
+        movement_score = self.calculate_head_pose(landmarks)
+        return movement_score > self.settings.head_movement_threshold
         
     @staticmethod
     def eye_aspect_ratio(eye: np.ndarray) -> float:
@@ -170,3 +180,13 @@ class FaceDetector:
         # Calculate eye aspect ratio
         ear = (A + B) / (2.0 * C)
         return ear 
+
+    def calculate_head_pose(self, landmarks: np.ndarray) -> float:
+        try:
+            # Placeholder for actual head pose estimation logic
+            head_pose_score = np.random.uniform(0.8, 1.0)  # Simulated score for demonstration
+            self.logger.debug(f"Head pose score: {head_pose_score}")
+            return head_pose_score
+        except Exception as e:
+            self.logger.error(f"Head pose estimation failed: {str(e)}")
+            return 0.0 

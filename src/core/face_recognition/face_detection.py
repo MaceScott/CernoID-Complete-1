@@ -4,6 +4,7 @@ import yaml
 import os
 from pathlib import Path
 import logging
+from functools import lru_cache
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,23 +28,28 @@ try:
 except KeyError as e:
     raise KeyError(f"Missing required configuration key: {e}")
 
+logger = logging.getLogger(__name__)
 
+@lru_cache(maxsize=100)
 def detect_faces(image_path):
     """
     Detect faces in an image using dlib's frontal face detector.
     """
     detector = dlib.get_frontal_face_detector()
-    # Read image and convert it to grayscale
     image = cv2.imread(image_path)
     if image is None:
+        logger.error(f"Image at {image_path} not found.")
         raise FileNotFoundError(f"Image at {image_path} not found.")
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Detect faces
     faces = detector(gray)
-    # Optional: Draw bounding boxes on the image
+
+    logger.info(f"Detected {len(faces)} faces in image {image_path}")
+
     for face in faces:
         x, y, w, h = face.left(), face.top(), face.right(), face.bottom()
         cv2.rectangle(image, (x, y), (w, h), (255, 0, 0), 2)
+
     return faces
 
 

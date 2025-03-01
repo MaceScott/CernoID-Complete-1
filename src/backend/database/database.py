@@ -7,6 +7,7 @@ from typing import List, Optional, Dict
 from config import DATABASE_CONFIG
 from sqlalchemy import create_engine
 from sqlalchemy.pool import QueuePool
+import psycopg2
 
 # Configure logging
 logging.basicConfig(
@@ -80,6 +81,7 @@ class Database:
         :param face_encoding: List of numerical face encoding data.
         """
         if not isinstance(face_encoding, list) or not all(isinstance(val, float) for val in face_encoding):
+            logging.error("Invalid face_encoding format provided.")
             raise ValueError("face_encoding must be a list of numerical (float) values.")
 
         hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -91,12 +93,16 @@ class Database:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute(query, (username, hashed_password, str(face_encoding)))  # Store face encoding as string
+                cursor.execute(query, (username, hashed_password, str(face_encoding)))
                 conn.commit()
                 logging.info(f"User '{username}' successfully added.")
+        except psycopg2.IntegrityError as e:
+            conn.rollback()
+            logging.error(f"Integrity error inserting user '{username}': {e}")
+            raise
         except Exception as e:
             conn.rollback()
-            logging.error(f"Error inserting user '{username}': {e}")
+            logging.error(f"Unexpected error inserting user '{username}': {e}")
             raise
         finally:
             self._release_connection(conn)
@@ -198,10 +204,3 @@ if __name__ == "__main__":
 
     finally:
         Database.close_pool()
-
-# Add connection pooling
-engine = create_engine('postgresql://...', 
-                      poolclass=QueuePool,
-                      pool_size=20,
-                      max_overflow=10,
-                      pool_timeout=30)

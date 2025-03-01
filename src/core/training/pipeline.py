@@ -6,6 +6,8 @@ import torch
 from pathlib import Path
 import json
 import asyncio
+import torch.nn as nn
+from torchvision import models
 
 from ...utils.config import get_settings
 from ...utils.logging import get_logger
@@ -23,12 +25,34 @@ class TrainingPipeline:
         self.optimizer = self._initialize_optimizer()
         
     def _initialize_model(self):
-        # Implementation of _initialize_model method
-        pass
+        try:
+            model = models.resnet50(pretrained=True)
+            model.fc = nn.Sequential(
+                nn.Linear(2048, self.settings.embedding_size),
+                nn.BatchNorm1d(self.settings.embedding_size),
+                nn.ReLU(),
+                nn.Linear(self.settings.embedding_size, self.settings.num_classes)
+            )
+            if torch.cuda.is_available():
+                model = model.cuda()
+            self.logger.info("Model initialized successfully.")
+            return model
+        except Exception as e:
+            self.logger.error(f"Model initialization failed: {str(e)}")
+            raise
 
     def _initialize_optimizer(self):
-        # Implementation of _initialize_optimizer method
-        pass
+        try:
+            optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=self.settings.learning_rate,
+                weight_decay=self.settings.weight_decay
+            )
+            self.logger.info("Optimizer initialized successfully.")
+            return optimizer
+        except Exception as e:
+            self.logger.error(f"Optimizer initialization failed: {str(e)}")
+            raise
 
     def train(self,
              train_data: FaceDataset,
@@ -182,17 +206,22 @@ class TrainingPipeline:
                         train_loss: float,
                         val_loss: float):
         """Save model checkpoint."""
-        checkpoint_path = Path(
-            self.settings.checkpoint_dir
-        ) / f"checkpoint_{epoch}.pt"
-        
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'train_loss': train_loss,
-            'val_loss': val_loss
-        }, checkpoint_path)
-        
-        # Log artifact
-        mlflow.log_artifact(str(checkpoint_path)) 
+        try:
+            checkpoint_path = Path(
+                self.settings.checkpoint_dir
+            ) / f"checkpoint_{epoch}.pt"
+
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'train_loss': train_loss,
+                'val_loss': val_loss
+            }, checkpoint_path)
+
+            mlflow.log_artifact(str(checkpoint_path))
+            self.logger.info(f"Checkpoint saved successfully at epoch {epoch}: {checkpoint_path}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save checkpoint at epoch {epoch}: {str(e)}")
+            raise 

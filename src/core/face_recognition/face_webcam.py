@@ -1,6 +1,10 @@
 import cv2
 import dlib
 from config import SHAPE_PREDICTOR_PATH  # If unused, remove this import
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def face_detection_from_webcam():
@@ -8,8 +12,18 @@ def face_detection_from_webcam():
     detector = dlib.get_frontal_face_detector()
     # Access the default webcam
     cap = cv2.VideoCapture(0)
+
+    # Enhanced logging for webcam initialization
+    logger.info("Initializing webcam for face detection.")
+
+    # Improved error handling for webcam access
     if not cap.isOpened():
-        raise OSError("Webcam could not be opened. Please check if it's connected and permissions are granted.")
+        logger.error("Webcam could not be opened. Please check connection and permissions.")
+        raise OSError("Webcam could not be opened.")
+
+    # Adjust frame resolution for performance optimization
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     print("Press 'q' to quit")
     try:
@@ -22,6 +36,8 @@ def face_detection_from_webcam():
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             # Detect faces
             faces = detector(gray)
+            # Enhanced logging for face detection
+            logger.info(f"Detected {len(faces)} faces in current frame.")
             # Draw rectangles around the faces
             for face in faces:
                 x, y = face.left(), face.top()

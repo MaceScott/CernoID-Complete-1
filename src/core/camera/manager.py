@@ -54,7 +54,6 @@ class CameraManager(BaseComponent):
             if camera_id in self._cameras:
                 raise CameraError(f"Camera {camera_id} already exists")
             
-            # Create camera instance
             camera = Camera(
                 camera_id,
                 source,
@@ -64,20 +63,19 @@ class CameraManager(BaseComponent):
                 self._buffer_size
             )
             
-            # Initialize camera
             await camera.initialize()
             
-            # Add to cameras
             self._cameras[camera_id] = camera
             self._subscribers[camera_id] = []
             
-            # Update statistics
             self._stats['active_cameras'] = len(self._cameras)
             
-            # Start frame processing
             asyncio.create_task(self._process_frames(camera))
             
+            self.logger.info(f"Camera {camera_id} added and initialized successfully.")
+            
         except Exception as e:
+            self.logger.error(f"Failed to add camera {camera_id}: {str(e)}")
             raise CameraError(f"Failed to add camera: {str(e)}")
 
     async def remove_camera(self, camera_id: str) -> None:

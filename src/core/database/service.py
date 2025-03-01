@@ -74,10 +74,15 @@ class DatabaseService:
     async def create_user(self, user_data: Dict) -> User:
         """Create new user."""
         async with self.session() as session:
-            user = User(**user_data)
-            session.add(user)
-            await session.flush()
-            return user
+            try:
+                user = User(**user_data)
+                session.add(user)
+                await session.flush()
+                self.logger.info(f"User created successfully: {user.id}")
+                return user
+            except Exception as e:
+                self.logger.error(f"Failed to create user: {str(e)}")
+                raise
             
     async def get_user(self, user_id: int) -> Optional[User]:
         """Get user by ID."""
@@ -131,14 +136,18 @@ class DatabaseService:
             return result.rowcount > 0
             
     # Batch operations
-    async def batch_create_encodings(self,
-                                   encodings: List[Dict]) -> List[FaceEncoding]:
+    async def batch_create_encodings(self, encodings: List[Dict]) -> List[FaceEncoding]:
         """Create multiple encodings in batch."""
         async with self.session() as session:
-            encoding_objects = [FaceEncoding(**data) for data in encodings]
-            session.add_all(encoding_objects)
-            await session.flush()
-            return encoding_objects
+            try:
+                encoding_objects = [FaceEncoding(**data) for data in encodings]
+                session.add_all(encoding_objects)
+                await session.flush()
+                self.logger.info(f"Batch created {len(encoding_objects)} encodings successfully.")
+                return encoding_objects
+            except Exception as e:
+                self.logger.error(f"Failed batch creation of encodings: {str(e)}")
+                raise
             
     # Query operations
     async def search_users(self,

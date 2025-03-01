@@ -22,12 +22,18 @@ class DatabasePool(ConnectionPool[Connection]):
 
     async def initialize(self) -> None:
         """Initialize database pool"""
-        self._pool = await asyncpg.create_pool(**self._db_config)
+        try:
+            self._pool = await asyncpg.create_pool(**self._db_config)
+            self.logger.info("Database connection pool initialized successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize database connection pool: {str(e)}")
+            raise
 
     async def cleanup(self) -> None:
         """Cleanup database pool"""
         if self._pool:
             await self._pool.close()
+            self.logger.info("Database connection pool closed successfully.")
 
     @handle_errors(logger=None)
     async def _connect(self) -> Connection:

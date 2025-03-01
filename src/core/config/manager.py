@@ -15,6 +15,8 @@ import hashlib
 from copy import deepcopy
 import jsonschema
 
+logger = logging.getLogger(__name__)
+
 @dataclass
 class ConfigSection:
     """Configuration section with validation"""
@@ -152,7 +154,8 @@ class ConfigManager(BaseComponent):
         try:
             jsonschema.validate(config, self._schema)
         except jsonschema.exceptions.ValidationError as e:
-            raise ConfigError(f"Config validation failed: {str(e)}")
+            logger.error(f"Configuration validation error: {e.message}")
+            raise ConfigError(f"Configuration validation error: {e.message}")
 
     async def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value"""
@@ -285,21 +288,18 @@ class ConfigManager(BaseComponent):
         """Initialize configuration manager"""
         try:
             # Start file watcher
-            asyncio.create_task(self._file_watcher())
+            await self._file_watcher()
             
         except Exception as e:
             raise ConfigError(f"Initialization failed: {str(e)}")
 
     async def _file_watcher(self) -> None:
         """Watch for configuration file changes"""
-        while True:
-            try:
-                await self._check_file_changes()
-                await asyncio.sleep(5)  # Check every 5 seconds
-                
-            except Exception as e:
-                self.logger.error(f"File watcher error: {str(e)}")
-                await asyncio.sleep(5)
+        observer = Observer()
+        event_handler = ConfigFileHandler(self)
+        observer.schedule(event_handler, str(self._config_path.parent), recursive=False)
+        observer.start()
+        logger.info("Started configuration file watcher.")
 
     def _notify_changes(self, key: str, value: Any) -> None:
         """Notify configuration changes"""
@@ -321,4 +321,5358 @@ class ConfigFileHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         if not event.is_directory:
+            self.config_manager.reload_config()
+
+    def on_created(self, event):
+        if not event.is_directory:
+            self.config_manager.reload_config()
+
+    def on_deleted(self, event):
+        if not event.is_directory:
+            self.config_manager.reload_config()
+
+    def on_moved(self, event):
+        if not event.is_directory:
+            self.config_manager.reload_config()
+
+    def on_error(self, event):
+        logger.error(f"Error in configuration file watcher: {event.strerror}")
+
+    def on_closed(self, event):
+        logger.info("Configuration file watcher closed.")
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        if key.lower().endswith(('password', 'secret', 'key')):
+            logger.info(f"Configuration '{key}' updated securely.")
+        else:
+            logger.info(f"Configuration '{key}' updated to '{value}'.")
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
+    def _get_config_changes(self, old: Dict, new: Dict, prefix: str = '') -> Dict:
+        """Get configuration changes between versions"""
+        changes = {}
+        
+        for key, value in new.items():
+            full_key = f"{prefix}{key}" if prefix else key
+            
+            if key not in old:
+                changes[full_key] = value
+            elif isinstance(value, dict) and isinstance(old[key], dict):
+                changes.update(
+                    self._get_config_changes(old[key], value, f"{full_key}.")
+                )
+            elif value != old[key]:
+                changes[full_key] = value
+                
+        return changes
+
+    async def _file_watcher(self) -> None:
+        """Watch for configuration file changes"""
+        await self._check_file_changes()
+        await asyncio.sleep(5)  # Check every 5 seconds
+
+    async def _notify_changes(self, key: str, value: Any) -> None:
+        """Notify configuration changes"""
+        self.config_manager.logger.info(f"Configuration changed: {key}")
+        # Implement change notification system here
+
+    async def _notify_watchers(self, key: str, value: Any) -> None:
+        """Notify configuration watchers"""
+        try:
+            # Find matching watchers
+            for watch_key, callback in self.config_manager._watchers.items():
+                if key.startswith(watch_key):
+                    await callback(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Watcher notification failed: {str(e)}")
+
+    async def _check_file_changes(self) -> None:
+        """Check for configuration file changes"""
+        try:
+            if self.config_manager._config_path.exists():
+                mtime = self.config_manager._config_path.stat().st_mtime
+                
+                if mtime > self.config_manager._last_modified:
+                    # Reload config
+                    new_config = self.config_manager._load_config()
+                    
+                    # Find changed values
+                    changes = self.config_manager._get_config_changes(self.config_manager._config, new_config)
+                    
+                    # Update config
+                    self.config_manager._config = new_config
+                    self.config_manager._last_modified = mtime
+                    
+                    # Notify watchers
+                    for key, value in changes.items():
+                        await self._notify_watchers(key, value)
+                    
+        except Exception as e:
+            self.config_manager.logger.error(f"Config file check failed: {str(e)}")
+
             self.config_manager.reload_config() 

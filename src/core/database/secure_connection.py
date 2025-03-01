@@ -10,20 +10,25 @@ class SecureDatabase:
         self.ssl_context = self._create_ssl_context()
 
     def _create_ssl_context(self) -> ssl.SSLContext:
-        ssl_context = ssl.create_default_context(
-            purpose=ssl.Purpose.SERVER_AUTH,
-            cafile=self.config.get('database.ca_cert')
-        )
-        ssl_context.check_hostname = True
-        ssl_context.verify_mode = ssl.CERT_REQUIRED
-        
-        # Client certificate authentication
-        ssl_context.load_cert_chain(
-            certfile=self.config.get('database.client_cert'),
-            keyfile=self.config.get('database.client_key')
-        )
-        
-        return ssl_context
+        try:
+            ssl_context = ssl.create_default_context(
+                purpose=ssl.Purpose.SERVER_AUTH,
+                cafile=self.config.get('database.ca_cert')
+            )
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+            
+            # Client certificate authentication
+            ssl_context.load_cert_chain(
+                certfile=self.config.get('database.client_cert'),
+                keyfile=self.config.get('database.client_key')
+            )
+            
+            db_logger.info("SSL context created successfully.")
+            return ssl_context
+        except Exception as e:
+            db_logger.error(f"Failed to create SSL context: {str(e)}")
+            raise
 
     @handle_exceptions(logger=db_logger.error)
     async def initialize(self):

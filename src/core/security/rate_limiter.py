@@ -25,7 +25,7 @@ class RateLimiter:
         try:
             await self.redis.ping()
             self._cleanup_task = asyncio.create_task(self._cleanup_expired_keys())
-            self.logger.info("Rate limiter started successfully")
+            self.logger.info("Rate limiter started successfully and connected to Redis")
         except Exception as e:
             self.logger.error(f"Rate limiter start failed: {str(e)}")
             raise
@@ -37,9 +37,9 @@ class RateLimiter:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Cleanup task cancelled successfully")
         await self.redis.close()
-        self.logger.info("Rate limiter stopped")
+        self.logger.info("Rate limiter stopped and Redis connection closed")
 
     async def check_rate_limit(self, request: Request) -> None:
         """Check if request exceeds rate limit"""
@@ -87,10 +87,15 @@ class RateLimiter:
 
     def _generate_key(self, request: Request) -> str:
         """Generate rate limit key"""
-        # Use IP and endpoint for rate limiting
-        ip = request.client.host
-        endpoint = request.url.path
-        return f"rate_limit:{ip}:{endpoint}"
+        try:
+            ip = request.client.host
+            endpoint = request.url.path
+            key = f"rate_limit:{ip}:{endpoint}"
+            self.logger.debug(f"Generated rate limit key: {key}")
+            return key
+        except Exception as e:
+            self.logger.error(f"Failed to generate rate limit key: {str(e)}")
+            raise
 
     def _get_limits(self, request: Request) -> Tuple[int, int]:
         """Get rate limit and period for endpoint"""

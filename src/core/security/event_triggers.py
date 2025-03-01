@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from core.events.manager import EventManager
 from core.error_handling import handle_exceptions
+from core.utils.logging import get_logger
+
+security_logger = get_logger(__name__)
 
 @dataclass
 class SecurityTrigger:
@@ -47,9 +50,17 @@ class SecurityEventTrigger:
         )
 
     async def process_event(self, event: Dict):
-        for trigger in self.triggers.values():
-            if trigger.enabled and self._check_conditions(event, trigger.conditions):
-                await trigger.action(event)
+        try:
+            triggered_actions = 0
+            for trigger in self.triggers.values():
+                if trigger.enabled and self._check_conditions(event, trigger.conditions):
+                    await trigger.action(event)
+                    triggered_actions += 1
+
+            security_logger.info(f"Event processed successfully: {event}, triggered {triggered_actions} actions")
+        except Exception as e:
+            security_logger.error(f"Event processing failed: {str(e)}")
+            raise
 
     def _check_conditions(self, event: Dict, conditions: Dict) -> bool:
         for key, value in conditions.items():

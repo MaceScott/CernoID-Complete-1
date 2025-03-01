@@ -76,7 +76,6 @@ class CameraCoordinator(BaseComponent):
             if camera_id in self._cameras:
                 raise CameraError(f"Camera {camera_id} already exists")
             
-            # Initialize camera
             camera = {
                 'id': camera_id,
                 'name': name,
@@ -90,20 +89,20 @@ class CameraCoordinator(BaseComponent):
                 'error': None
             }
             
-            # Create queues
             self._frame_queues[camera_id] = asyncio.Queue(maxsize=100)
             if priority > 1:
                 self._priority_queues[camera_id] = asyncio.Queue(maxsize=50)
             
-            # Store camera
             self._cameras[camera_id] = camera
             
-            # Start camera feed
             await self._start_camera_feed(camera_id)
             
             self._stats['active_cameras'] = len(self._active_feeds)
             
+            self.logger.info(f"Camera {camera_id} added and feed started successfully.")
+            
         except Exception as e:
+            self.logger.error(f"Failed to add camera {camera_id}: {str(e)}")
             raise CameraError(f"Failed to add camera: {str(e)}")
 
     async def remove_camera(self, camera_id: str) -> None:

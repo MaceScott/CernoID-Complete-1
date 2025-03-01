@@ -30,7 +30,8 @@ class QueryOptimizer:
             explain_query = f"EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS) {query}"
             result = await self.session.execute(text(explain_query))
             plan = result.scalar()
-            
+
+            self.logger.info(f"Query analyzed successfully: {query}")
             return {
                 'plan': plan,
                 'recommendations': self._generate_recommendations(plan)

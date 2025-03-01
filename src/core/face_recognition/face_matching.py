@@ -1,5 +1,10 @@
 import os
 import numpy as np
+import logging
+from functools import lru_cache
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class NoFacesDetectedError(Exception):
@@ -63,4 +68,21 @@ def match_faces(image1_path, image2_path, threshold=0.6):
     except Exception as e:
         # Catch any other unexpected exceptions
         raise RuntimeError(f"An unexpected error occurred: {e}")
+
+
+@lru_cache(maxsize=100)
+def cached_encode_faces(image_path):
+    from app.face_recognition.face_encoding import encode_faces
+    return encode_faces(image_path)
+
+
+# Enhanced logging for face matching
+logger.info(f"Matching faces from {image1_path} and {image2_path} with threshold {threshold}")
+
+# Replace encode_faces with cached_encode_faces
+encodings1 = cached_encode_faces(image1_path)
+encodings2 = cached_encode_faces(image2_path)
+
+# Enhanced logging for distance calculation
+logger.info(f"Calculated distance between faces: {distance}")
 

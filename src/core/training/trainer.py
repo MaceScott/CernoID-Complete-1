@@ -191,152 +191,84 @@ class ModelTrainer(BaseComponent):
             self.logger.error(f"WandB initialization failed: {str(e)}")
             self._use_wandb = False
 
-    async def train(self,
-                   train_data: Tuple[List[str], List[int]],
-                   val_data: Optional[Tuple[List[str], List[int]]] = None) -> None:
-        """Train the model"""
+    async def train(self, train_data: Tuple[List[str], List[int]], val_data: Optional[Tuple[List[str], List[int]]] = None) -> None:
         try:
-            # Prepare datasets
             train_dataset = self._prepare_dataset(train_data)
-            if val_data:
-                val_dataset = self._prepare_dataset(val_data)
-            else:
-                # Split training data
-                train_paths, val_paths, train_labels, val_labels = train_test_split(
-                    train_data[0], train_data[1],
-                    test_size=0.2,
-                    stratify=train_data[1]
-                )
-                train_dataset = self._prepare_dataset((train_paths, train_labels))
-                val_dataset = self._prepare_dataset((val_paths, val_labels))
-            
-            # Create data loaders
-            train_loader = DataLoader(
-                train_dataset,
-                batch_size=self._batch_size,
-                shuffle=True,
-                num_workers=4,
-                pin_memory=True
-            )
-            val_loader = DataLoader(
-                val_dataset,
-                batch_size=self._batch_size,
-                shuffle=False,
-                num_workers=4,
-                pin_memory=True
-            )
-            
-            # Training loop
+            val_dataset = self._prepare_dataset(val_data) if val_data else None
+
+            train_loader = DataLoader(train_dataset, batch_size=self._batch_size, shuffle=True, num_workers=4, pin_memory=True)
+            val_loader = DataLoader(val_dataset, batch_size=self._batch_size, shuffle=False, num_workers=4, pin_memory=True) if val_dataset else None
+
             best_loss = float('inf')
             patience_counter = 0
             start_time = datetime.utcnow()
-            
+
             for epoch in range(self._num_epochs):
                 self._stats['current_epoch'] = epoch
-                
-                # Training phase
+
                 train_loss = await self._train_epoch(train_loader)
                 self._stats['train_loss'] = train_loss
-                
-                # Validation phase
-                if epoch % self._val_interval == 0:
+                self.logger.info(f"Epoch {epoch}: Training loss: {train_loss}")
+
+                if val_loader and epoch % self._val_interval == 0:
                     val_loss = await self._validate(val_loader)
                     self._stats['val_loss'] = val_loss
-                    
-                    # Learning rate scheduling
+                    self.logger.info(f"Epoch {epoch}: Validation loss: {val_loss}")
+
                     self._scheduler.step(val_loss)
-                    
-                    # Early stopping
+
                     if val_loss < best_loss:
                         best_loss = val_loss
                         patience_counter = 0
                         await self._save_checkpoint(epoch, val_loss)
                     else:
                         patience_counter += 1
-                        if patience_counter >= self._early_stopping:
-                            self.logger.info("Early stopping triggered")
-                            break
-                
-                # Update stats
-                self._stats['learning_rate'] = self._optimizer.param_groups[0]['lr']
-                self._stats['training_time'] = (
-                    datetime.utcnow() - start_time
-                ).total_seconds()
-                
-                # Log progress
-                if self._use_wandb:
-                    wandb.log({
-                        'epoch': epoch,
-                        'train_loss': train_loss,
-                        'val_loss': val_loss,
-                        'learning_rate': self._stats['learning_rate']
-                    })
-            
-            # Save final model
-            await self._save_model()
-            
+
+                    if patience_counter >= self._early_stopping:
+                        self.logger.info("Early stopping triggered.")
+                        break
+
+            self.logger.info("Training completed successfully.")
+
         except Exception as e:
+            self.logger.error(f"Training failed: {str(e)}")
             raise TrainingError(f"Training failed: {str(e)}")
 
     async def _train_epoch(self, train_loader: DataLoader) -> float:
         """Train one epoch"""
         self._model.train()
         total_loss = 0.0
-        
+
         with tqdm(train_loader, desc=f"Epoch {self._stats['current_epoch']}") as pbar:
             for batch_idx, (images, labels) in enumerate(pbar):
                 try:
                     if torch.cuda.is_available():
                         images = images.cuda()
                         labels = labels.cuda()
-                    
-                    # Forward pass with AMP
+
                     with torch.cuda.amp.autocast(enabled=self._use_amp):
-                        # Get embeddings and predictions
-                        embeddings = self._model(images)
-                        logits = self._model.fc(embeddings)
-                        
-                        # Calculate losses
-                        ce_loss = self._ce_loss(logits, labels)
-                        center_loss = self._center_loss(embeddings, labels)
-                        
-                        # Combine losses
-                        loss = ce_loss + self._center_loss_weight * center_loss
-                    
-                    # Backward pass
+                        outputs = self._model(images)
+                        loss = self._ce_loss(outputs, labels)
+
+                    self._optimizer.zero_grad()
                     if self._use_amp:
                         self._scaler.scale(loss).backward()
-                        self._scaler.unscale_(self._optimizer)
-                        torch.nn.utils.clip_grad_norm_(
-                            self._model.parameters(),
-                            self._gradient_clip
-                        )
                         self._scaler.step(self._optimizer)
                         self._scaler.update()
                     else:
                         loss.backward()
-                        torch.nn.utils.clip_grad_norm_(
-                            self._model.parameters(),
-                            self._gradient_clip
-                        )
                         self._optimizer.step()
-                    
-                    self._optimizer.zero_grad()
-                    
-                    # Update statistics
+
                     total_loss += loss.item()
-                    
-                    if batch_idx % self._log_interval == 0:
-                        pbar.set_postfix({
-                            'loss': loss.item(),
-                            'lr': self._optimizer.param_groups[0]['lr']
-                        })
-                    
+                    pbar.set_postfix(loss=loss.item())
+
                 except Exception as e:
-                    self.logger.error(f"Training batch failed: {str(e)}")
-                    continue
-        
-        return total_loss / len(train_loader)
+                    self.logger.error(f"Training batch {batch_idx} failed: {str(e)}")
+                    raise
+
+        avg_loss = total_loss / len(train_loader)
+        self.logger.info(f"Epoch {self._stats['current_epoch']} completed with average loss: {avg_loss}")
+        return avg_loss
 
     async def _validate(self, val_loader: DataLoader) -> float:
         """Validate model"""

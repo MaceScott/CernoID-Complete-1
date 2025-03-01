@@ -79,24 +79,25 @@ class SchemaManager(BaseComponent):
         """Create database table"""
         db = self.app.get_component('database')
         if not db:
+            self.logger.error("Database component not available")
             raise RuntimeError("Database component not available")
-            
-        # Generate CREATE TABLE query
+
         query = self._generate_create_table(table)
-        
-        # Create table
+
         async with db.transaction():
-            await db.execute(query)
-            
-            # Create indexes
-            if table.indexes:
-                for index in table.indexes:
-                    await db.execute(
-                        self._generate_create_index(table.name, index)
-                    )
-                    
-        # Register table
-        self.register_table(table)
+            try:
+                await db.execute(query)
+                self.logger.info(f"Table '{table.name}' created successfully.")
+
+                if table.indexes:
+                    for index in table.indexes:
+                        await db.execute(self._generate_create_index(table.name, index))
+                        self.logger.info(f"Index created for table '{table.name}'.")
+
+                self.register_table(table)
+            except Exception as e:
+                self.logger.error(f"Failed to create table '{table.name}': {str(e)}")
+                raise
 
     @handle_errors(logger=None)
     async def drop_table(self, name: str) -> None:

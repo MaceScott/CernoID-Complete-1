@@ -122,20 +122,27 @@ class SecurityAuditor:
 
     async def _write_event(self, event: AuditEvent) -> None:
         """Write audit event to log file"""
-        if self._should_rotate_log():
-            await self._rotate_log_file()
-            
-        event_data = {
-            'event_type': event.event_type.value,
-            'timestamp': event.timestamp.isoformat(),
-            'user_id': event.user_id,
-            'ip_address': event.ip_address,
-            'details': event.details,
-            'severity': event.severity
-        }
-        
-        with open(self._current_log_file, 'a') as f:
-            f.write(json.dumps(event_data) + '\n')
+        try:
+            if self._should_rotate_log():
+                await self._rotate_log_file()
+
+            event_data = {
+                'event_type': event.event_type.value,
+                'timestamp': event.timestamp.isoformat(),
+                'user_id': event.user_id,
+                'ip_address': event.ip_address,
+                'details': event.details,
+                'severity': event.severity
+            }
+
+            with open(self._current_log_file, 'a') as f:
+                f.write(json.dumps(event_data) + '\n')
+
+            self.logger.info(f"Audit event '{event.event_type.value}' logged successfully")
+
+        except Exception as e:
+            self.logger.error(f"Failed to write audit event '{event.event_type.value}': {str(e)}")
+            raise
 
     async def _process_security_alert(self, event: AuditEvent) -> None:
         """Process and notify security alerts"""

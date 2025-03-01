@@ -10,6 +10,7 @@ from collections import deque
 import tensorflow as tf
 from ..utils.config import get_settings
 from ..utils.logging import get_logger
+from pydantic import BaseModel, ValidationError
 
 @dataclass
 class ThreatEvent:
@@ -21,14 +22,31 @@ class ThreatEvent:
     frame_id: int
     metadata: Dict[str, Any]
 
+class ThreatDetectionConfig(BaseModel):
+    behavior_model_path: str
+    yolo_weights: str
+    yolo_config: str
+    use_gpu: bool = False
+    motion_history_frames: int = 30
+    event_history_size: int = 100
+    motion_threshold: float = 0.05
+    min_motion_area: int = 500
+    object_threshold: float = 0.5
+    threat_object_classes: List[int]
+    restricted_zones: Dict[str, List[Tuple[int, int]]]
+
 class ThreatDetector:
     """
     Advanced threat detection with multiple detection methods
     """
     
     def __init__(self):
-        self.settings = get_settings()
         self.logger = get_logger(__name__)
+        try:
+            self.settings = ThreatDetectionConfig(**get_settings().security)
+        except ValidationError as e:
+            self.logger.error(f"Invalid threat detection configuration: {e}")
+            raise
         
         # Initialize detection models
         self.behavior_model = self._load_behavior_model()
@@ -47,43 +65,34 @@ class ThreatDetector:
         # Zone definitions
         self.restricted_zones = self._load_zones()
         
-    def _load_behavior_model(self) -> tf.keras.Model:
+    def _load_behavior_model(self) -> Optional[tf.keras.Model]:
         """Load behavior analysis model"""
         try:
-            model = tf.keras.models.load_model(
-                self.settings.behavior_model_path
-            )
-            self.logger.info("Behavior model loaded successfully")
+            model = tf.keras.models.load_model(self.settings.behavior_model_path)
+            self.logger.info(f"Behavior model loaded successfully from {self.settings.behavior_model_path}")
             return model
         except Exception as e:
             self.logger.error(f"Failed to load behavior model: {str(e)}")
-            return None
+            raise
             
-    def _load_object_detector(self) -> cv2.dnn.Net:
+    def _load_object_detector(self) -> Optional[cv2.dnn.Net]:
         """Load YOLO object detector"""
         try:
-            net = cv2.dnn.readNet(
-                self.settings.yolo_weights,
-                self.settings.yolo_config
-            )
-            
+            net = cv2.dnn.readNet(self.settings.yolo_weights, self.settings.yolo_config)
+            backend = 'CUDA' if self.settings.use_gpu else 'CPU'
             if self.settings.use_gpu:
                 net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
                 net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
-                
-            self.logger.info("Object detector loaded successfully")
+            self.logger.info(f"Object detector loaded successfully using {backend}")
             return net
         except Exception as e:
             self.logger.error(f"Failed to load object detector: {str(e)}")
-            return None
+            raise
             
     def _load_zones(self) -> Dict[str, np.ndarray]:
         """Load restricted zone definitions"""
         try:
-            zones = {}
-            for zone_name, points in self.settings.restricted_zones.items():
-                zones[zone_name] = np.array(points)
-            return zones
+            return {zone_name: np.array(points) for zone_name, points in self.settings.restricted_zones.items()}
         except Exception as e:
             self.logger.error(f"Failed to load zones: {str(e)}")
             return {}
@@ -147,34 +156,22 @@ class ThreatDetector:
             return []
             
     async def _detect_motion_threats(self,
-                                   frame: np.ndarray,
-                                   frame_id: int,
-                                   timestamp: float) -> List[ThreatEvent]:
-        """Detect suspicious motion patterns"""
+                                     frame: np.ndarray,
+                                     frame_id: int,
+                                     timestamp: float) -> List[ThreatEvent]:
         threats = []
-        
+
         try:
-            # Apply motion detection
             fgmask = self.motion_detector.apply(frame)
-            
-            # Calculate motion metrics
             motion_ratio = np.count_nonzero(fgmask) / fgmask.size
             self.motion_history.append(motion_ratio)
-            
-            # Check for sudden motion
+
             if len(self.motion_history) >= 2:
-                motion_delta = abs(
-                    self.motion_history[-1] - self.motion_history[-2]
-                )
-                
+                motion_delta = abs(self.motion_history[-1] - self.motion_history[-2])
+
                 if motion_delta > self.settings.motion_threshold:
-                    # Get motion regions
-                    contours, _ = cv2.findContours(
-                        fgmask,
-                        cv2.RETR_EXTERNAL,
-                        cv2.CHAIN_APPROX_SIMPLE
-                    )
-                    
+                    contours, _ = cv2.findContours(fgmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
                     for contour in contours:
                         if cv2.contourArea(contour) > self.settings.min_motion_area:
                             x, y, w, h = cv2.boundingRect(contour)
@@ -189,11 +186,13 @@ class ThreatDetector:
                                     "area": float(cv2.contourArea(contour))
                                 }
                             ))
-                            
+
+            self.logger.info(f"Motion threats detected: {len(threats)}")
+            return threats
+
         except Exception as e:
-            self.logger.error(f"Motion detection failed: {str(e)}")
-            
-        return threats
+            self.logger.error(f"Motion threat detection failed: {str(e)}")
+            return []
         
     async def _detect_object_threats(self,
                                    frame: np.ndarray,

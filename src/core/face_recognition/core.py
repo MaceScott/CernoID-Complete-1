@@ -53,10 +53,14 @@ class FaceRecognitionSystem:
     def _init_detector(self) -> cv2.CascadeClassifier:
         """Initialize face detector"""
         cascade_path = self.config.get('face_detection.cascade_path')
-        detector = cv2.CascadeClassifier(cascade_path)
-        if detector.empty():
-            raise ValueError(f"Failed to load cascade classifier from {cascade_path}")
-        return detector
+        try:
+            detector = cv2.CascadeClassifier(cascade_path)
+            if detector.empty():
+                raise ValueError(f"Failed to load cascade classifier from {cascade_path}")
+            return detector
+        except Exception as e:
+            logger.error(f"Error initializing face detector: {e}")
+            raise
 
     def _init_encoder(self) -> 'dlib.face_recognition_model_v1':
         """Initialize face encoder"""
@@ -112,6 +116,9 @@ class FaceRecognitionSystem:
                         face_image=face_image
                     ))
                     
+        # Enhanced logging for face detection
+        logger.info(f"Detected {len(detections)} faces in provided frames.")
+        
         return detections
 
     @lru_cache(maxsize=1000)

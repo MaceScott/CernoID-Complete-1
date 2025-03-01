@@ -13,6 +13,7 @@ import time
 from collections import deque
 from ..utils.config import get_settings
 from ..utils.logging import get_logger
+from pydantic import BaseModel, ValidationError
 
 from ..base import BaseComponent
 from ..utils.errors import SpoofingError
@@ -41,21 +42,33 @@ class LivenessScore:
     timestamp: float
     metadata: Dict[str, Any]
 
+class AntiSpoofingConfig(BaseModel):
+    face_size: int = 224
+    batch_size: int = 16
+    spoof_threshold: float = 0.8
+    motion_window: int = 10
+    texture_model: str
+    depth_model: str
+    reflection_model: str
+
 class AntiSpoofing(BaseComponent):
     """Advanced anti-spoofing detection system"""
     
     def __init__(self, config: dict):
         super().__init__(config)
-        
-        # Load models
-        self._texture_model = self._load_texture_model()
-        self._depth_model = self._load_depth_model()
-        self._reflection_model = self._load_reflection_model()
-        
-        # Processing settings
-        self._face_size = config.get('security.face_size', 224)
-        self._batch_size = config.get('security.batch_size', 16)
-        self._threshold = config.get('security.spoof_threshold', 0.8)
+        self.logger = get_logger(__name__)
+        try:
+            validated_config = AntiSpoofingConfig(**config.get('security', {}))
+        except ValidationError as e:
+            self.logger.error(f"Invalid anti-spoofing configuration: {e}")
+            raise SpoofingError(f"Invalid anti-spoofing configuration: {e}")
+        self._face_size = validated_config.face_size
+        self._batch_size = validated_config.batch_size
+        self._threshold = validated_config.spoof_threshold
+        self._motion_window = validated_config.motion_window
+        self._texture_model = self._load_texture_model(validated_config.texture_model)
+        self._depth_model = self._load_depth_model(validated_config.depth_model)
+        self._reflection_model = self._load_reflection_model(validated_config.reflection_model)
         
         # Attack types
         self._attack_types = [
@@ -63,8 +76,7 @@ class AntiSpoofing(BaseComponent):
         ]
         
         # Motion analysis
-        self._motion_window = config.get('security.motion_window', 10)
-        self._frame_history: Dict[str, List[np.ndarray]] = {}
+        self._frame_history: Dict[str, deque] = {}
         
         # Image preprocessing
         self._normalize = transforms.Normalize(
@@ -80,109 +92,64 @@ class AntiSpoofing(BaseComponent):
             'attack_distribution': {t: 0 for t in self._attack_types}
         }
 
-    def _load_texture_model(self) -> nn.Module:
-        """Load texture analysis model"""
+    def _load_texture_model(self, model_path: str) -> nn.Module:
         try:
-            model_path = self.config.get('security.texture_model')
-            if not model_path:
-                raise SpoofingError("Texture model path not configured")
-                
-            model = torch.load(model_path)
-            if torch.cuda.is_available():
-                model = model.cuda()
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            model = torch.load(model_path, map_location=device)
             model.eval()
-            
+            self.logger.info(f"Texture model loaded successfully on {device}")
             return model
-            
         except Exception as e:
+            self.logger.error(f"Failed to load texture model: {str(e)}")
             raise SpoofingError(f"Failed to load texture model: {str(e)}")
 
-    def _load_depth_model(self) -> nn.Module:
-        """Load depth estimation model"""
+    def _load_depth_model(self, model_path: str) -> nn.Module:
         try:
-            model_path = self.config.get('security.depth_model')
-            if not model_path:
-                raise SpoofingError("Depth model path not configured")
-                
-            model = torch.load(model_path)
-            if torch.cuda.is_available():
-                model = model.cuda()
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            model = torch.load(model_path, map_location=device)
             model.eval()
-            
+            self.logger.info(f"Depth model loaded successfully on {device}")
             return model
-            
         except Exception as e:
+            self.logger.error(f"Failed to load depth model: {str(e)}")
             raise SpoofingError(f"Failed to load depth model: {str(e)}")
 
-    def _load_reflection_model(self) -> nn.Module:
-        """Load reflection analysis model"""
+    def _load_reflection_model(self, model_path: str) -> nn.Module:
         try:
-            model_path = self.config.get('security.reflection_model')
-            if not model_path:
-                raise SpoofingError("Reflection model path not configured")
-                
-            model = torch.load(model_path)
-            if torch.cuda.is_available():
-                model = model.cuda()
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            model = torch.load(model_path, map_location=device)
             model.eval()
-            
+            self.logger.info(f"Reflection model loaded successfully on {device}")
             return model
-            
         except Exception as e:
+            self.logger.error(f"Failed to load reflection model: {str(e)}")
             raise SpoofingError(f"Failed to load reflection model: {str(e)}")
 
-    async def check_spoofing(self,
-                           face_img: np.ndarray,
-                           face_id: Optional[str] = None) -> SpoofingResult:
-        """Check for spoofing attempts"""
+    async def check_spoofing(self, face_img: np.ndarray, face_id: Optional[str] = None) -> SpoofingResult:
         try:
-            # Preprocess image
             face_tensor = self._preprocess_face(face_img)
             if face_tensor is None:
                 raise SpoofingError("Face preprocessing failed")
-            
-            # Analyze texture
-            texture_score = await self._analyze_texture(face_tensor)
-            
-            # Analyze depth
-            depth_score = await self._analyze_depth(face_tensor)
-            
-            # Analyze reflections
-            reflection_score = await self._analyze_reflections(face_tensor)
-            
-            # Analyze motion if face_id provided
-            motion_score = 0.0
+
+            tasks = [
+                self._analyze_texture(face_tensor),
+                self._analyze_depth(face_tensor),
+                self._analyze_reflections(face_tensor)
+            ]
+
             if face_id:
-                motion_score = await self._analyze_motion(face_img, face_id)
-            
-            # Calculate final score
-            weights = {
-                'texture': 0.4,
-                'depth': 0.3,
-                'reflection': 0.2,
-                'motion': 0.1
-            }
-            
-            final_score = (
-                texture_score * weights['texture'] +
-                depth_score * weights['depth'] +
-                reflection_score * weights['reflection'] +
-                motion_score * weights['motion']
-            )
-            
-            # Determine if real
+                tasks.append(self._analyze_motion(face_img, face_id))
+
+            results = await asyncio.gather(*tasks)
+
+            texture_score, depth_score, reflection_score = results[:3]
+            motion_score = results[3] if face_id else 0.0
+
+            final_score = (texture_score * 0.4 + depth_score * 0.3 + reflection_score * 0.2 + motion_score * 0.1)
             is_real = final_score >= self._threshold
-            
-            # Detect attack type if spoof
-            attack_type = None
-            if not is_real:
-                attack_type = await self._detect_attack_type(
-                    texture_score,
-                    depth_score,
-                    reflection_score
-                )
-            
-            # Create result
+
+            attack_type = None if is_real else await self._detect_attack_type(texture_score, depth_score, reflection_score)
+
             result = SpoofingResult(
                 is_real=is_real,
                 confidence=final_score,
@@ -193,54 +160,40 @@ class AntiSpoofing(BaseComponent):
                 motion_score=motion_score,
                 timestamp=datetime.utcnow()
             )
-            
-            # Update statistics
+
             self._update_stats(result)
-            
+            self.logger.info(f"Spoofing check completed successfully: {result}")
+
             return result
-            
         except Exception as e:
+            self.logger.error(f"Spoofing check failed: {str(e)}")
             raise SpoofingError(f"Spoofing check failed: {str(e)}")
 
     def _preprocess_face(self, face_img: np.ndarray) -> Optional[torch.Tensor]:
         """Preprocess face image"""
         try:
-            # Resize image
-            face_img = cv2.resize(face_img, (self._face_size, self._face_size))
-            
-            # Convert to RGB
-            if len(face_img.shape) == 2:
+            face_img = cv2.resize(face_img, (self._face_size, self._face_size), interpolation=cv2.INTER_AREA)
+            if face_img.ndim == 2 or face_img.shape[2] == 1:
                 face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2RGB)
             elif face_img.shape[2] == 4:
                 face_img = cv2.cvtColor(face_img, cv2.COLOR_BGRA2RGB)
-            elif face_img.shape[2] == 3:
+            else:
                 face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-            
-            # Convert to tensor
-            face_tensor = torch.from_numpy(face_img).float()
-            face_tensor = face_tensor.permute(2, 0, 1)
-            face_tensor = face_tensor.unsqueeze(0)
-            
-            # Normalize
-            face_tensor = self._normalize(face_tensor)
-            
-            if torch.cuda.is_available():
-                face_tensor = face_tensor.cuda()
-            
-            return face_tensor
-            
+            face_tensor = torch.from_numpy(face_img).float().permute(2, 0, 1).unsqueeze(0)
+            face_tensor = self._normalize(face_tensor / 255.0)
+            return face_tensor.cuda() if torch.cuda.is_available() else face_tensor
         except Exception as e:
             self.logger.error(f"Face preprocessing failed: {str(e)}")
             return None
 
     async def _analyze_texture(self, face_tensor: torch.Tensor) -> float:
-        """Analyze facial texture"""
         try:
             with torch.no_grad():
                 texture_features = self._texture_model(face_tensor)
                 texture_score = torch.sigmoid(texture_features).item()
+            self.logger.info(f"Texture analysis completed successfully with score: {texture_score}")
             return float(texture_score)
-            
+
         except Exception as e:
             self.logger.error(f"Texture analysis failed: {str(e)}")
             return 0.0
@@ -276,14 +229,10 @@ class AntiSpoofing(BaseComponent):
         try:
             # Initialize history for new faces
             if face_id not in self._frame_history:
-                self._frame_history[face_id] = []
+                self._frame_history[face_id] = deque(maxlen=self._motion_window)
             
             # Add current frame
             self._frame_history[face_id].append(face_img)
-            
-            # Maintain window size
-            if len(self._frame_history[face_id]) > self._motion_window:
-                self._frame_history[face_id].pop(0)
             
             # Need at least 2 frames for motion analysis
             if len(self._frame_history[face_id]) < 2:
@@ -353,31 +302,11 @@ class AntiSpoofing(BaseComponent):
         except Exception:
             return 0.0
 
-    async def _detect_attack_type(self,
-                                texture_score: float,
-                                depth_score: float,
-                                reflection_score: float) -> str:
-        """Detect type of spoofing attack"""
-        try:
-            # Feature vector
-            features = np.array([
-                texture_score,
-                depth_score,
-                reflection_score
-            ])
-            
-            # Simple rule-based detection
-            if texture_score < 0.3:
-                return 'print'
-            elif reflection_score < 0.3:
-                return 'replay'
-            elif depth_score < 0.3:
-                return 'mask'
-            else:
-                return 'deepfake'
-            
-        except Exception:
-            return 'unknown'
+    async def _detect_attack_type(self, texture_score: float, depth_score: float, reflection_score: float) -> str:
+        scores = {'texture': texture_score, 'depth': depth_score, 'reflection': reflection_score}
+        attack_type = max(scores, key=scores.get)
+        self.logger.debug(f"Detected attack type: {attack_type} with scores: {scores}")
+        return attack_type
 
     def _update_stats(self, result: SpoofingResult) -> None:
         """Update spoofing statistics"""

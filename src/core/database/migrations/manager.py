@@ -38,19 +38,24 @@ class MigrationManager:
 
     async def _load_migrations(self) -> None:
         """Load migration files"""
-        for file_path in sorted(self.migrations_dir.glob('*.py')):
-            if file_path.name.startswith('__'):
-                continue
-                
-            spec = importlib.util.spec_from_file_location(
-                file_path.stem, file_path
-            )
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            
-            if hasattr(module, 'Migration'):
-                version = file_path.stem.split('_')[0]
-                self._migrations[version] = module.Migration()
+        try:
+            for file_path in sorted(self.migrations_dir.glob('*.py')):
+                if file_path.name.startswith('__'):
+                    continue
+
+                spec = importlib.util.spec_from_file_location(
+                    file_path.stem, file_path
+                )
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+
+                if hasattr(module, 'Migration'):
+                    version = file_path.stem.split('_')[0]
+                    self._migrations[version] = module.Migration()
+                    self.logger.info(f"Loaded migration: {version}")
+        except Exception as e:
+            self.logger.error(f"Failed to load migrations: {str(e)}")
+            raise
 
     async def _get_current_version(self) -> str:
         """Get current migration version"""

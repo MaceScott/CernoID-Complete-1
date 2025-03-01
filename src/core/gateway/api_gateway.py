@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+from pydantic import BaseModel, ValidationError
 
 @dataclass
 class RouteConfig:
@@ -22,11 +23,23 @@ class RouteConfig:
     cache_config: Optional[Dict] = None
     timeout: int = 30
 
+class GatewayConfig(BaseModel):
+    cors_origins: List[str] = ["*"]
+    jwt_secret: str
+    forward_headers: List[str] = []
+    host: str = '0.0.0.0'
+    port: int = 8000
+    workers: int = 4
+
 class APIGateway:
     """API Gateway implementation"""
     
     def __init__(self, config: Dict):
-        self.config = config
+        try:
+            self.config = GatewayConfig(**config)
+        except ValidationError as e:
+            logging.error(f"Invalid gateway configuration: {e}")
+            raise
         self.logger = logging.getLogger('APIGateway')
         self.app = FastAPI(title="CernoID API Gateway")
         self._routes: Dict[str, RouteConfig] = {}
@@ -56,7 +69,7 @@ class APIGateway:
         # CORS middleware
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=self.config.get('cors_origins', ["*"]),
+            allow_origins=self.config.cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"]
@@ -149,6 +162,7 @@ class APIGateway:
             token = request.headers.get('Authorization')
             
             if not token:
+                self.logger.warning("Missing authentication token")
                 return JSONResponse(
                     status_code=401,
                     content={"error": "Authentication required"}
@@ -158,12 +172,19 @@ class APIGateway:
                 # Verify JWT token
                 payload = jwt.decode(
                     token.split()[1],
-                    self.config['jwt_secret'],
+                    self.config.jwt_secret,
                     algorithms=["HS256"]
                 )
                 request.state.user = payload
                 
-            except jwt.InvalidTokenError:
+            except jwt.ExpiredSignatureError:
+                self.logger.warning("Expired JWT token")
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "Token expired"}
+                )
+            except jwt.InvalidTokenError as e:
+                self.logger.warning(f"Invalid JWT token: {str(e)}")
                 return JSONResponse(
                     status_code=401,
                     content={"error": "Invalid token"}
@@ -188,6 +209,7 @@ class APIGateway:
             )
             
             if current_rate > route_config.rate_limit['max_requests']:
+                self.logger.warning(f"Rate limit exceeded for {client_ip} on {request.url.path}")
                 return JSONResponse(
                     status_code=429,
                     content={"error": "Rate limit exceeded"}
@@ -203,7 +225,7 @@ class APIGateway:
     def _forward_headers(self, request: Request) -> Dict:
         """Forward necessary headers"""
         headers = {}
-        for header in self.config.get('forward_headers', []):
+        for header in self.config.forward_headers:
             if header in request.headers:
                 headers[header] = request.headers[header]
         return headers
@@ -212,9 +234,9 @@ class APIGateway:
         """Run API Gateway"""
         config = uvicorn.Config(
             app=self.app,
-            host=self.config.get('host', '0.0.0.0'),
-            port=self.config.get('port', 8000),
-            workers=self.config.get('workers', 4)
+            host=self.config.host,
+            port=self.config.port,
+            workers=self.config.workers
         )
         server = uvicorn.Server(config)
         await server.serve() 

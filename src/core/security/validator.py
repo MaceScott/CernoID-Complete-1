@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 from jsonschema import validate, ValidationError
 from ..utils.errors import ValidationError as AppValidationError
+from ..utils.logging import get_logger
 
 class RequestValidator:
     """Request data validation"""
@@ -10,6 +11,7 @@ class RequestValidator:
     def __init__(self):
         self._schemas: Dict[str, Dict[str, Any]] = {}
         self._custom_validators: Dict[str, Callable] = {}
+        self.logger = get_logger(__name__)
 
     def add_schema(self, name: str, schema: Dict[str, Any]) -> None:
         """
@@ -20,11 +22,14 @@ class RequestValidator:
             schema: JSON schema definition
         """
         if not name or not isinstance(name, str):
+            self.logger.error("Schema name must be a non-empty string")
             raise ValueError("Schema name must be a non-empty string")
         if not schema or not isinstance(schema, dict):
+            self.logger.error("Schema must be a non-empty dictionary")
             raise ValueError("Schema must be a non-empty dictionary")
             
         self._schemas[name] = schema
+        self.logger.info(f"Schema '{name}' added successfully")
 
     def add_validator(self, name: str, validator: Callable) -> None:
         """
@@ -35,11 +40,14 @@ class RequestValidator:
             validator: Callable validation function
         """
         if not name or not isinstance(name, str):
+            self.logger.error("Validator name must be a non-empty string")
             raise ValueError("Validator name must be a non-empty string")
         if not callable(validator):
+            self.logger.error("Validator must be a callable")
             raise ValueError("Validator must be a callable")
             
         self._custom_validators[name] = validator
+        self.logger.info(f"Validator '{name}' added successfully")
 
     def validate(self, data: Any, schema_name: str) -> None:
         """
@@ -53,11 +61,14 @@ class RequestValidator:
             AppValidationError: If validation fails
         """
         if schema_name not in self._schemas:
+            self.logger.error(f"Schema not found: {schema_name}")
             raise AppValidationError(f"Schema not found: {schema_name}")
             
         try:
             validate(instance=data, schema=self._schemas[schema_name])
+            self.logger.info(f"Data validated successfully against schema '{schema_name}'")
         except ValidationError as e:
+            self.logger.error(f"Validation failed: {str(e)}")
             raise AppValidationError(str(e))
 
     def validate_type(self, value: Any, expected_type: Union[type, tuple], field_name: str) -> None:
@@ -78,18 +89,18 @@ class RequestValidator:
     def validate_range(
         self,
         value: Union[int, float],
+        field_name: str,
         min_value: Optional[Union[int, float]] = None,
-        max_value: Optional[Union[int, float]] = None,
-        field_name: str
+        max_value: Optional[Union[int, float]] = None
     ) -> None:
         """
         Validate numeric range
         
         Args:
             value: Number to validate
+            field_name: Name of field being validated
             min_value: Optional minimum value
             max_value: Optional maximum value
-            field_name: Name of field being validated
         """
         if min_value is not None and value < min_value:
             raise AppValidationError(f"{field_name} must be >= {min_value}")
@@ -99,18 +110,18 @@ class RequestValidator:
     def validate_length(
         self,
         value: Union[str, List, Dict],
+        field_name: str,
         min_length: Optional[int] = None,
-        max_length: Optional[int] = None,
-        field_name: str
+        max_length: Optional[int] = None
     ) -> None:
         """
         Validate length of string or collection
         
         Args:
             value: Value to validate length
+            field_name: Name of field being validated
             min_length: Optional minimum length
             max_length: Optional maximum length
-            field_name: Name of field being validated
         """
         length = len(value)
         if min_length is not None and length < min_length:
@@ -168,8 +179,15 @@ class RequestValidator:
             validator_name: Name of custom validator to use
             **kwargs: Additional arguments for validator
         """
-        if validator_name not in self._custom_validators:
-            raise AppValidationError(f"Validator not found: {validator_name}")
-            
-        validator = self._custom_validators[validator_name]
-        validator(data, **kwargs) 
+        try:
+            if validator_name not in self._custom_validators:
+                self.logger.error(f"Validator not found: {validator_name}")
+                raise AppValidationError(f"Validator not found: {validator_name}")
+
+            validator = self._custom_validators[validator_name]
+            validator(data, **kwargs)
+            self.logger.info(f"Custom validation '{validator_name}' executed successfully")
+
+        except Exception as e:
+            self.logger.error(f"Custom validation '{validator_name}' failed: {str(e)}")
+            raise 

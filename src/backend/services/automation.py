@@ -80,7 +80,7 @@ def load_embeddings(embeddings_file: Path) -> Dict[str, Any]:
 
 def match_images(embeddings: Dict[str, Any], image_folder: Path) -> List[Dict[str, Any]]:
     """
-    Matches all image pairs using their embeddings.
+    Matches all image pairs using their embeddings with optimized parallel processing.
 
     Args:
         embeddings (Dict): Dictionary where keys are image names and values are embeddings.
@@ -89,15 +89,22 @@ def match_images(embeddings: Dict[str, Any], image_folder: Path) -> List[Dict[st
     Returns:
         List[Dict[str, Any]]: A list of match results containing compared image pairs and whether they matched.
     """
-    logging.info("Starting image matching process...")
-    results = []
+    from concurrent.futures import ThreadPoolExecutor
+
+    logging.info("Starting optimized image matching process...")
+
+    def match_pair(pair):
+        img1, img2 = pair
+        match = match_faces(image_folder / img1, image_folder / img2)
+        return {"image1": img1, "image2": img2, "match": match}
+
     images = list(embeddings.keys())
-    for i, img1 in enumerate(images):
-        for j, img2 in enumerate(images):
-            if i < j:  # Avoid self-matching and redundant comparisons
-                match = match_faces(image_folder / img1, image_folder / img2)
-                results.append({"image1": img1, "image2": img2, "match": match})
-    logging.info(f"Completed matching {len(results)} image pairs.")
+    pairs = [(images[i], images[j]) for i in range(len(images)) for j in range(i + 1, len(images))]
+
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(match_pair, pairs))
+
+    logging.info(f"Completed optimized matching of {len(results)} image pairs.")
     return results
 
 

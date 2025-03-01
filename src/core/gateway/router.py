@@ -7,22 +7,38 @@ import json
 from urllib.parse import urljoin
 from ..base import BaseComponent
 from ..utils.errors import handle_errors
+import logging
+from pydantic import BaseModel, ValidationError
+
+class GatewayConfig(BaseModel):
+    timeout: int = 30
+    retry_attempts: int = 3
+    circuit_breaker: bool = True
+    breaker_threshold: int = 5
+    breaker_timeout: int = 60
+    health_interval: int = 30
 
 class APIGateway(BaseComponent):
     """Advanced API Gateway and routing system"""
     
     def __init__(self, config: dict):
         super().__init__(config)
+        self.logger = logging.getLogger(__name__)
+        try:
+            validated_config = GatewayConfig(**config.get('gateway', {}))
+        except ValidationError as e:
+            self.logger.error(f"Invalid gateway configuration: {e}")
+            raise
+        self._timeout = validated_config.timeout
+        self._retry_attempts = validated_config.retry_attempts
+        self._circuit_breaker = validated_config.circuit_breaker
+        self._breaker_threshold = validated_config.breaker_threshold
+        self._breaker_timeout = validated_config.breaker_timeout
+        self._health_interval = validated_config.health_interval
         self._routes: Dict[str, Dict] = {}
         self._services: Dict[str, Dict] = {}
         self._middlewares: List[Callable] = []
         self._client = httpx.AsyncClient()
-        self._timeout = self.config.get('gateway.timeout', 30)
-        self._retry_attempts = self.config.get('gateway.retry_attempts', 3)
-        self._circuit_breaker = self.config.get('gateway.circuit_breaker', True)
-        self._breaker_threshold = self.config.get('gateway.breaker_threshold', 5)
-        self._breaker_timeout = self.config.get('gateway.breaker_timeout', 60)
-        self._health_interval = self.config.get('gateway.health_interval', 30)
         self._router = APIRouter()
 
     async def initialize(self) -> None:
@@ -170,16 +186,11 @@ class APIGateway(BaseComponent):
                              url: str,
                              service: Dict) -> Response:
         """Forward request to service"""
-        # Get request content
         body = await request.body()
-        
-        # Prepare headers
         headers = dict(request.headers)
         headers['X-Forwarded-For'] = request.client.host
-        
         for attempt in range(self._retry_attempts):
             try:
-                # Send request
                 response = await self._client.request(
                     request.method,
                     url,
@@ -189,28 +200,21 @@ class APIGateway(BaseComponent):
                     timeout=self._timeout,
                     follow_redirects=True
                 )
-                
-                # Update service status
                 service['status'] = 'healthy'
                 service['failures'] = 0
-                
                 return Response(
                     content=response.content,
                     status_code=response.status_code,
                     headers=dict(response.headers)
                 )
-                
             except Exception as e:
                 service['failures'] += 1
-                
-                if (service['failures'] >=
-                    self._breaker_threshold):
+                self.logger.error(f"Request attempt {attempt + 1} failed for {url}: {str(e)}")
+                if service['failures'] >= self._breaker_threshold:
                     service['status'] = 'failed'
-                    
                 if attempt == self._retry_attempts - 1:
-                    raise e
-                    
-                await asyncio.sleep(1)
+                    raise HTTPException(status_code=502, detail=f"Failed to forward request to {url}")
+                await asyncio.sleep(2 ** attempt)
 
     async def _health_check(self) -> None:
         """Perform service health checks"""
@@ -232,8 +236,9 @@ class APIGateway(BaseComponent):
                         else:
                             service['failures'] += 1
                             
-                    except Exception:
+                    except Exception as e:
                         service['failures'] += 1
+                        self.logger.error(f"Health check failed for {name}: {str(e)}")
                         
                     # Update status
                     if (service['failures'] >=
@@ -245,7 +250,7 @@ class APIGateway(BaseComponent):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Health check failed: {str(e)}")
+                self.logger.error(f"Health check loop error: {str(e)}")
                 await asyncio.sleep(5)
 
     async def _load_routes(self) -> None:

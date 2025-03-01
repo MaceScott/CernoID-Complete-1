@@ -52,66 +52,63 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
     async def initialize(self) -> None:
         """Initialize security middleware"""
-        await self._crypto.initialize()
-        self._setup_validators()
+        try:
+            await self._crypto.initialize()
+            self._setup_validators()
+            self.logger.info("Security middleware initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Security middleware initialization failed: {str(e)}")
+            raise
 
     async def cleanup(self) -> None:
         """Cleanup security middleware"""
-        await self._crypto.cleanup()
+        try:
+            await self._crypto.cleanup()
+            self.logger.info("Security middleware cleaned up successfully")
+        except Exception as e:
+            self.logger.error(f"Security middleware cleanup failed: {str(e)}")
+            raise
 
     async def dispatch(self,
                       request: Request,
                       call_next: Callable) -> Response:
         """Process request"""
-        # Skip excluded paths
         if self._is_excluded_path(request.url.path):
             return await call_next(request)
-            
+
         try:
-            # Check rate limit
             if self._should_rate_limit(request.url.path):
                 key = self._get_rate_limit_key(request)
                 if not await self.security.check_rate_limit(key):
+                    self.logger.warning(f"Rate limit exceeded for key: {key}")
                     return JSONResponse(
                         status_code=429,
-                        content={
-                            'detail': 'Too many requests'
-                        }
+                        content={'detail': 'Too many requests'}
                     )
-                    
-            # Verify authentication
+
             token = self._get_token(request)
             if token:
                 try:
-                    # Verify and decode token
                     payload = self.security.verify_token(token)
-                    
-                    # Add user info to request state
                     request.state.user = payload
-                    
                 except jwt.InvalidTokenError as e:
+                    self.logger.warning(f"Invalid token error: {str(e)}")
                     return JSONResponse(
                         status_code=401,
-                        content={
-                            'detail': str(e)
-                        }
+                        content={'detail': str(e)}
                     )
-                    
-            # Process request
+
             response = await call_next(request)
-            
-            # Add security headers
             self._add_security_headers(response)
-            
+
+            self.logger.info(f"Request processed successfully: {request.url.path}")
             return response
-            
+
         except Exception as e:
             self.logger.error(f"Security middleware error: {str(e)}")
             return JSONResponse(
                 status_code=500,
-                content={
-                    'detail': 'Internal server error'
-                }
+                content={'detail': 'Internal server error'}
             )
 
     def _get_token(self, request: Request) -> Optional[str]:

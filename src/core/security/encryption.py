@@ -10,6 +10,7 @@ import base64
 import os
 from pathlib import Path
 import json
+from datetime import datetime
 
 from ..utils.config import get_settings
 from ..utils.logging import get_logger
@@ -57,33 +58,39 @@ class EncryptionService:
             
     def _generate_key(self) -> bytes:
         """Generate new encryption key."""
-        return Fernet.generate_key()
+        try:
+            key = Fernet.generate_key()
+            self.logger.info("Encryption key generated successfully")
+            return key
+        except Exception as e:
+            self.logger.error(f"Key generation failed: {str(e)}")
+            raise
         
     def _save_key(self, key_id: str, key: bytes):
         """Save encryption key to secure storage."""
-        key_path = self.key_dir / f"{key_id}.key"
-        
-        with open(key_path, 'wb') as f:
-            f.write(base64.urlsafe_b64encode(key))
+        try:
+            key_path = self.key_dir / f"{key_id}.key"
+            with open(key_path, 'wb') as f:
+                f.write(base64.urlsafe_b64encode(key))
+            self.logger.info(f"Key {key_id} saved successfully")
+        except Exception as e:
+            self.logger.error(f"Saving key {key_id} failed: {str(e)}")
+            raise
             
     async def rotate_key(self) -> str:
         """Rotate encryption key."""
         try:
-            # Generate new key
             key_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             new_key = self._generate_key()
-            
-            # Save new key
+
             self._save_key(key_id, new_key)
-            
-            # Update keys dictionary
+
             self.keys[key_id] = new_key
-            
-            # Update Fernet instance
             self.fernet = Fernet(new_key)
-            
+
+            self.logger.info(f"Key rotated successfully: {key_id}")
             return key_id
-            
+
         except Exception as e:
             self.logger.error(f"Key rotation failed: {str(e)}")
             raise
@@ -103,12 +110,11 @@ class EncryptionService:
             if isinstance(data, str):
                 data = data.encode()
                 
-            # Use specified key or current key
             key = self.keys[key_id] if key_id else self.current_key
             fernet = Fernet(key)
             
-            # Encrypt data
             encrypted_data = fernet.encrypt(data)
+            self.logger.info("Data encrypted successfully")
             
             return {
                 "data": base64.urlsafe_b64encode(encrypted_data).decode(),
@@ -123,15 +129,15 @@ class EncryptionService:
                      encrypted_data: Dict[str, str]) -> bytes:
         """Decrypt data with specified key."""
         try:
-            # Get key
             key_id = encrypted_data["key_id"]
             key = self.keys[key_id]
             fernet = Fernet(key)
             
-            # Decode and decrypt data
             data = base64.urlsafe_b64decode(encrypted_data["data"])
+            decrypted_data = fernet.decrypt(data)
+            self.logger.info("Data decrypted successfully")
             
-            return fernet.decrypt(data)
+            return decrypted_data
             
         except Exception as e:
             self.logger.error(f"Decryption failed: {str(e)}")
@@ -190,8 +196,13 @@ class EncryptionService:
             raise
             
     async def cleanup(self):
-        """Cleanup resources."""
-        pass  # No cleanup needed for encryption service
+        try:
+            self.keys.clear()
+            self.fernet = None
+            self.logger.info("Encryption service resources cleaned up successfully")
+        except Exception as e:
+            self.logger.error(f"Encryption service cleanup failed: {str(e)}")
+            raise
 
 # Global encryption service instance
 encryption_service = EncryptionService() 

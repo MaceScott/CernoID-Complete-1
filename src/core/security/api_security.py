@@ -4,6 +4,11 @@ import jwt
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from core.error_handling import handle_exceptions
+from core.utils.logging import get_logger
+from core.utils.config import get_settings
+
+security_logger = get_logger(__name__)
+config = get_settings()
 
 class SecurityManager:
     def __init__(self):
@@ -51,6 +56,12 @@ class SecurityManager:
 
     async def decrypt_sensitive_data(self, encrypted_data: str) -> str:
         from cryptography.fernet import Fernet
-        key = self.config.get('security.encryption_key')
-        f = Fernet(key)
-        return f.decrypt(encrypted_data.encode()).decode() 
+        try:
+            key = self.config.get('security.encryption_key')
+            f = Fernet(key)
+            decrypted_data = f.decrypt(encrypted_data.encode()).decode()
+            security_logger.info("Sensitive data decrypted successfully")
+            return decrypted_data
+        except Exception as e:
+            security_logger.error(f"Sensitive data decryption failed: {str(e)}")
+            raise 

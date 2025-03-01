@@ -100,64 +100,26 @@ async def create_person(
 )
 @handle_api_error
 async def recognize_face(
-    image: UploadFile = File(
-        ...,
-        description="Image file containing face to recognize"
-    ),
-    min_confidence: float = Query(
-        0.8,
-        ge=0.0,
-        le=1.0,
-        description="Minimum confidence threshold for recognition"
-    ),
+    image: UploadFile = File(..., description="Image file containing face to recognize"),
+    min_confidence: float = Query(0.8, ge=0.0, le=1.0, description="Minimum confidence threshold for recognition"),
     recognition_service: Any = Depends(get_recognition_service)
-) -> RecognitionResult:
-    """
-    Recognize face in uploaded image with the following steps:
-    1. Validate image format
-    2. Process image for face detection
-    3. Compare with known faces
-    4. Return recognition results
-    
-    Args:
-        image: Uploaded image file
-        min_confidence: Minimum confidence threshold
-        recognition_service: Recognition service instance
-        
-    Returns:
-        Recognition results including matched person if found
-        
-    Raises:
-        HTTPException: If recognition fails or image is invalid
-    """
-    # Validate image format
+) -> JSONResponse:
+    """Recognize face in uploaded image and return JSON response."""
     if not image.content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be an image"
-        )
-    
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": "File must be an image"})
+
     try:
         contents = await image.read()
-        result = await recognition_service.recognize_face(
-            contents,
-            min_confidence=min_confidence
-        )
-        
+        result = await recognition_service.recognize_face(contents, min_confidence=min_confidence)
+
         if not result:
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content={"detail": "No face recognized in image"}
-            )
-            
-        return result
-        
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": "No face recognized in image"})
+
+        return JSONResponse(status_code=status.HTTP_200_OK, content=result.dict())
+
     except Exception as e:
         logger.error(f"Recognition error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
 
 @router.get(
     "/access-logs/",

@@ -60,11 +60,9 @@ class DataAugmentor:
                      ) -> np.ndarray:
         """Apply augmentation to image."""
         try:
-            # Apply general augmentations
             augmented = self.transform(image=image)
             image = augmented["image"]
             
-            # Apply face-specific augmentations if bbox provided
             if bbox is not None:
                 x1, y1, x2, y2 = bbox
                 face = image[y1:y2, x1:x2]
@@ -72,6 +70,7 @@ class DataAugmentor:
                 augmented_face = self.face_transform(image=face)
                 image[y1:y2, x1:x2] = augmented_face["image"]
                 
+            self.logger.debug("Image augmented successfully.")
             return image
             
         except Exception as e:

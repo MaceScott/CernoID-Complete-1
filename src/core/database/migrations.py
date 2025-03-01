@@ -168,14 +168,14 @@ class MigrationManager(BaseComponent):
     async def _discover_migrations(self) -> None:
         """Discover available migrations"""
         pattern = re.compile(r'^\d{14}_\w+\.py$')
-        
+
         for file in sorted(self._migrations_path.glob('*.py')):
             if not pattern.match(file.name):
                 continue
-                
+
             migration_id = file.stem
             module_name = f"migrations.{migration_id}"
-            
+
             try:
                 spec = importlib.util.spec_from_file_location(
                     module_name,
@@ -183,16 +183,17 @@ class MigrationManager(BaseComponent):
                 )
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                
+
                 version = int(migration_id.split('_')[0])
                 name = migration_id.split('_', 1)[1]
-                
+
                 self._migrations[migration_id] = {
                     'version': version,
                     'name': name,
                     'module': module
                 }
-                
+                self.logger.info(f"Migration {migration_id} loaded successfully.")
+
             except Exception as e:
                 self.logger.error(
                     f"Failed to load migration {migration_id}: {str(e)}"

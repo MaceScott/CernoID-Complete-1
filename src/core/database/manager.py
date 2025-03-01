@@ -26,16 +26,15 @@ class DatabaseManager(BaseComponent):
 
     async def initialize(self) -> None:
         """Initialize database manager"""
-        # Load database configurations
         databases = self.config.get('database.connections', {})
-        
-        # Setup connections
+
         for name, config in databases.items():
             await self.add_connection(name, config)
-            
-        # Run migrations if enabled
+            self.logger.info(f"Database connection '{name}' initialized successfully.")
+
         if self._auto_migrate:
             await self.migrate()
+            self.logger.info("Database migrations executed successfully.")
 
     async def cleanup(self) -> None:
         """Cleanup database resources"""

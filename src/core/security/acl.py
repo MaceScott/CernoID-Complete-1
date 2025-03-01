@@ -60,36 +60,36 @@ class ACLSystem:
                              permission: Permission) -> bool:
         """Check if user has permission for resource."""
         try:
-            # Check cache first
             cache_key = f"{user_id}:{resource}"
             if cache_key in self.permission_cache:
                 permissions = self.permission_cache[cache_key]
                 if permission in permissions:
+                    self.logger.info(f"Permission '{permission}' for resource '{resource}' found in cache for user '{user_id}'")
                     return True
                     
-            # Get user roles
             user = await self.db.get_user(user_id)
             if not user:
+                self.logger.warning(f"User '{user_id}' not found")
                 return False
                 
             roles = user.roles
             
-            # Check permissions for each role
             for role in roles:
                 role_permissions = self.acl_config.get(role, {})
                 resource_permissions = role_permissions.get(resource, [])
                 
                 if permission in resource_permissions:
-                    # Update cache
                     if cache_key not in self.permission_cache:
                         self.permission_cache[cache_key] = set()
                     self.permission_cache[cache_key].add(permission)
+                    self.logger.info(f"Permission '{permission}' for resource '{resource}' granted to user '{user_id}' via role '{role}'")
                     return True
                     
+            self.logger.warning(f"Permission '{permission}' for resource '{resource}' denied for user '{user_id}'")
             return False
             
         except Exception as e:
-            self.logger.error(f"Permission check failed: {str(e)}")
+            self.logger.error(f"Permission check failed for user '{user_id}', resource '{resource}', permission '{permission}': {str(e)}")
             return False
             
     async def grant_permission(self,
@@ -156,10 +156,14 @@ class ACLSystem:
             self.logger.error(f"Failed to save ACL config: {str(e)}")
             raise
             
-    def get_role_permissions(self,
-                           role: str) -> Dict[str, List[str]]:
-        """Get all permissions for a role."""
-        return self.acl_config.get(role, {})
+    def get_role_permissions(self, role: str) -> Dict[str, List[str]]:
+        try:
+            permissions = self.acl_config.get(role, {})
+            self.logger.info(f"Permissions retrieved successfully for role '{role}'")
+            return permissions
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve permissions for role '{role}': {str(e)}")
+            raise
         
     def get_resource_roles(self,
                          resource: Resource) -> List[str]:

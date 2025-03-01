@@ -8,6 +8,7 @@ from pathlib import Path
 import hashlib
 import jwt
 from cryptography.fernet import Fernet
+import shutil
 
 @dataclass
 class SecurityEvent:
@@ -38,13 +39,9 @@ class SecurityAuditor:
     async def log_event(self, event: SecurityEvent) -> None:
         """Log security event"""
         try:
-            # Encrypt sensitive data
             event.raw_data = self._encrypt_data(event.raw_data)
-            
-            # Generate event hash
             event_hash = self._generate_event_hash(event)
-            
-            # Prepare log entry
+
             log_entry = {
                 "event_id": event.event_id,
                 "timestamp": event.timestamp.isoformat(),
@@ -57,13 +54,12 @@ class SecurityAuditor:
                 "raw_data": event.raw_data,
                 "hash": event_hash
             }
-            
-            # Write to log file
+
             await self._write_log_entry(log_entry)
-            
-            # Check for security alerts
             await self._check_security_alerts(event)
-            
+
+            self.logger.info(f"Event {event.event_id} logged successfully")
+
         except Exception as e:
             self.logger.error(f"Event logging failed: {str(e)}")
             raise
@@ -123,12 +119,22 @@ class SecurityAuditor:
             raise
 
     def _encrypt_data(self, data: str) -> str:
-        """Encrypt sensitive data"""
-        return self._fernet.encrypt(data.encode()).decode()
+        try:
+            encrypted_data = self._fernet.encrypt(data.encode()).decode()
+            self.logger.info("Data encrypted successfully")
+            return encrypted_data
+        except Exception as e:
+            self.logger.error(f"Data encryption failed: {str(e)}")
+            raise
 
     def _decrypt_data(self, encrypted_data: str) -> str:
-        """Decrypt sensitive data"""
-        return self._fernet.decrypt(encrypted_data.encode()).decode()
+        try:
+            decrypted_data = self._fernet.decrypt(encrypted_data.encode()).decode()
+            self.logger.info("Data decrypted successfully")
+            return decrypted_data
+        except Exception as e:
+            self.logger.error(f"Data decryption failed: {str(e)}")
+            raise
 
     def _generate_event_hash(self, event: Dict) -> str:
         """Generate event hash for integrity verification"""
@@ -146,13 +152,18 @@ class SecurityAuditor:
 
     async def _rotate_log_file(self) -> None:
         """Rotate audit log file"""
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        self._current_log = self.audit_dir / f"audit_{timestamp}.log"
-        
-        # Archive old log file if it exists
-        if self._current_log.exists():
-            archive_name = f"audit_{timestamp}.archive"
-            shutil.move(self._current_log, self.audit_dir / archive_name)
+        try:
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            self._current_log = self.audit_dir / f"audit_{timestamp}.log"
+
+            if self._current_log.exists():
+                archive_name = f"audit_{timestamp}.archive"
+                shutil.move(self._current_log, self.audit_dir / archive_name)
+
+            self.logger.info(f"Log file rotated successfully: {self._current_log}")
+        except Exception as e:
+            self.logger.error(f"Log file rotation failed: {str(e)}")
+            raise
 
     async def _check_security_alerts(self, event: SecurityEvent) -> None:
         """Check for security alerts"""
