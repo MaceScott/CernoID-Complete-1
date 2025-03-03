@@ -1,79 +1,62 @@
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
-import { User } from '../types';
+import { useState, useCallback, useEffect } from 'react';
+import { User } from '../types/user';
+import { AuthService } from '../services/auth';
 
 export const useAuth = () => {
     const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const navigate = useNavigate();
+
+    const checkAuth = useCallback(async () => {
+        try {
+            setLoading(true);
+            const userData = await AuthService.checkAuth();
+            setUser(userData);
+            setError(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Authentication failed');
+            setUser(null);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     const login = useCallback(async (username: string, password: string) => {
-        setLoading(true);
-        setError(null);
-        
         try {
-            const response = await api.post('/auth/login', {
-                username,
-                password
-            });
-            
-            const { access_token, user: userData } = response.data;
-            
-            // Store token
-            localStorage.setItem('token', access_token);
-            
-            // Update user state
+            setLoading(true);
+            const userData = await AuthService.login(username, password);
             setUser(userData);
-            
-            // Navigate to dashboard
-            navigate('/dashboard');
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Login failed');
+            setError(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Login failed');
             throw err;
         } finally {
             setLoading(false);
         }
-    }, [navigate]);
+    }, []);
 
     const logout = useCallback(async () => {
         try {
-            await api.post('/auth/logout');
-        } catch (err) {
-            console.error('Logout error:', err);
-        } finally {
-            // Clear local storage
-            localStorage.removeItem('token');
-            
-            // Reset state
+            setLoading(true);
+            await AuthService.logout();
             setUser(null);
-            
-            // Navigate to login
-            navigate('/login');
-        }
-    }, [navigate]);
-
-    const checkAuth = useCallback(async () => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            return false;
-        }
-
-        try {
-            const response = await api.get('/auth/me');
-            setUser(response.data);
-            return true;
+            setError(null);
         } catch (err) {
-            localStorage.removeItem('token');
-            return false;
+            setError(err instanceof Error ? err.message : 'Logout failed');
+        } finally {
+            setLoading(false);
         }
     }, []);
+
+    useEffect(() => {
+        checkAuth();
+    }, [checkAuth]);
 
     return {
         user,
         loading,
         error,
+        isAuthenticated: !!user,
         login,
         logout,
         checkAuth

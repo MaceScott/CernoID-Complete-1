@@ -1,12 +1,11 @@
-"""Reorganize project structure according to best practices."""
-from pathlib import Path
-import logging
-import sys
-from .base_script import BaseScript, argparse
 import os
 import shutil
+from pathlib import Path
+import logging
 from typing import List, Dict
 from datetime import datetime, timedelta
+import sys
+import argparse
 
 # Configure logging
 logging.basicConfig(
@@ -15,37 +14,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class ReorganizeProject(BaseScript):
-    """Reorganize project directory structure"""
-    
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument('--aggressive-cleanup', '-a', action='store_true',
-                          help='Aggressively remove source files after successful move')
-        parser.add_argument('--clean-backups', '-c', action='store_true',
-                          help='Clean up old backup directories')
-
-    def run(self, args: argparse.Namespace) -> None:
-        try:
-            # Get the project root directory
-            project_root = Path(args.path).resolve()
-            logger.info(f"Project root directory: {project_root}")
-            
-            reorganizer = ProjectReorganizer(
-                str(project_root),
-                dry_run=args.dry_run,
-                aggressive=args.aggressive_cleanup
-            )
-            
-            if args.clean_backups:
-                reorganizer.clean_old_backups()
-                if not args.force:
-                    return
-
-            reorganizer.run(force=args.force)
-        except Exception as e:
-            logger.error(f"Failed to reorganize project: {e}")
-            sys.exit(1)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Reorganize project directory structure')
+    parser.add_argument('project_root', nargs='?', default='.',
+                       help='Project root directory (default: current directory)')
+    parser.add_argument('--force', '-f', action='store_true',
+                       help='Force reorganization even if already processed')
+    parser.add_argument('--dry-run', '-n', action='store_true',
+                       help='Show what would be done without making changes')
+    parser.add_argument('--clean-backups', '-c', action='store_true',
+                       help='Clean up old backup directories')
+    parser.add_argument('--aggressive-cleanup', '-a', action='store_true',
+                       help='Aggressively remove source files after successful move')
+    return parser.parse_args()
 
 class ProjectReorganizer:
     def __init__(self, root_dir: str, dry_run: bool = False, aggressive: bool = False):
@@ -648,3 +629,36 @@ export default function RegisterPage() {
         except Exception as e:
             logger.error(f"Failed to reorganize project: {e}")
             raise
+
+def main():
+    args = parse_args()
+    
+    try:
+        # Check if we're running from the original location
+        script_path = Path(__file__)
+        if 'utils/scripts' in str(script_path):
+            logger.info("Script has been moved to utils/scripts. Skipping execution.")
+            return
+
+        # Get the project root directory
+        project_root = Path(args.project_root).resolve()
+        
+        logger.info(f"Project root directory: {project_root}")
+        reorganizer = ProjectReorganizer(
+            str(project_root), 
+            dry_run=args.dry_run,
+            aggressive=args.aggressive_cleanup
+        )
+        
+        if args.clean_backups:
+            reorganizer.clean_old_backups()
+            if not args.force:
+                return
+
+        reorganizer.run(force=args.force)
+    except Exception as e:
+        logger.error(f"Failed to reorganize project: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

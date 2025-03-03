@@ -1,9 +1,0 @@
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Surveillance System
-Comment=Start Surveillance System
-Exec=/path/to/your/app/scripts/start.sh
-Icon=/path/to/your/app/public/icon.png
-Terminal=true
-Categories=Application; 

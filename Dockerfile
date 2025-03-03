@@ -48,6 +48,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    mpg123 \
+    alsa-utils \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy built Next.js assets

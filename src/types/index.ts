@@ -39,4 +39,14 @@ export interface SystemStatus {
     status: "operational" | "degraded" | "down"
     lastCheck: string
   }[]
+}
+
+export interface Face {
+  id: string
+  bbox: number[]
+  confidence: number
+  landmarks?: number[][]
+  features?: number[]
+  personId?: string
+  timestamp: string
 } 
