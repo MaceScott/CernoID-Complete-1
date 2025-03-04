@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Camera } from "@/types";
 import { useWebSocketMessage } from "@/lib/websocket";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import Alert from "@/components/ui/Alert";
+import { Alert } from "@/components/ui/alert";
 import { Camera as CameraIcon, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 
 interface CameraGridProps {

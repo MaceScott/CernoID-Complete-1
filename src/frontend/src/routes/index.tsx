@@ -7,7 +7,7 @@ import { Dashboard } from '../components/Dashboard/Dashboard';
 import { ImageUpload, ResultsViewer } from '../components/Recognition';
 import { UserManagement } from '../components/Users/UserManagement';
 import { Settings } from '../components/Settings/Settings';
-import { NotFound } from '../components/Error/NotFound';
+import NotFound from '../components/Error/NotFound';
 import { Unauthorized } from '../components/Error/Unauthorized';
 
 export const AppRoutes: React.FC = () => {

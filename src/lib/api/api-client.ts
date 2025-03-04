@@ -1,4 +1,26 @@
-import { User, Camera, Alert, SystemStatus } from "@/types"
+import { User, Camera, Alert, SystemStatus, AppSettings } from "@/types"
+import { RecognitionResult } from "../types/recognition"
+import { AxiosError, AxiosResponse } from 'axios'
+
+interface ApiError {
+    message: string;
+    code?: string;
+    details?: unknown;
+}
+
+interface ApiResponse<T> {
+    data: T;
+    status: number;
+    message?: string;
+}
+
+interface PaginatedResponse<T> {
+    items: T[];
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+}
 
 class APIClient {
   private static instance: APIClient
@@ -65,6 +87,11 @@ class APIClient {
     }
   }
 
+  async handleError(error: AxiosError<ApiError>): Promise<never> {
+    const errorMessage = error.response?.data?.message || error.message;
+    throw new Error(errorMessage);
+  }
+
   // Auth endpoints
   auth = {
     login: async (email: string, password: string) => {
@@ -109,6 +136,53 @@ class APIClient {
         method: 'PUT',
         body: JSON.stringify(settings),
       }),
+  }
+
+  // Recognition endpoints
+  recognition = {
+    processImage: (imageData: string) =>
+      this.fetch<RecognitionResult>('/recognition/process', {
+        method: 'POST',
+        body: JSON.stringify({ image: imageData }),
+      }),
+  }
+
+  // Settings endpoints
+  settings = {
+    get: () => this.fetch<AppSettings>('/settings'),
+    update: (settings: AppSettings) =>
+      this.fetch<AppSettings>('/settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+      }),
+    reset: () => this.fetch<AppSettings>('/settings/reset', { method: 'POST' }),
+  }
+
+  // Users endpoints
+  users = {
+    list: (filters?: {
+      search?: string;
+      role?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    }) => this.fetch<PaginatedResponse<User>>('/users', {
+      method: 'GET',
+      ...(filters && { body: JSON.stringify(filters) })
+    }),
+    get: (id: string) => this.fetch<User>(`/users/${id}`),
+    create: (userData: Partial<User>) =>
+      this.fetch<User>('/users', {
+        method: 'POST',
+        body: JSON.stringify(userData),
+      }),
+    update: (id: string, userData: Partial<User>) =>
+      this.fetch<User>(`/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(userData),
+      }),
+    delete: (id: string) =>
+      this.fetch<void>(`/users/${id}`, { method: 'DELETE' }),
   }
 }
 

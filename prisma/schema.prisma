@@ -2,7 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl"]
 }
 
 datasource db {
@@ -11,33 +12,147 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          String    @default("user")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  preferences   Json?
-  alerts        Alert[]
+  id              String          @id @default(cuid())
+  name            String?
+  email           String         @unique
+  emailVerified   DateTime?
+  image           String?
+  password        String?
+  role            String         @default("user")
+  status          String         @default("active")
+  isAdmin         Boolean        @default(false)
+  accessLevel     Int            @default(0)
+  allowedZones    String[]       @default([])
+  lastLogin       DateTime?
+  lastAccess      DateTime?
+  accessHistory   Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  preferences     Json?
+  securityEvents  SecurityEvent[] @relation("PersonEvents")
+  accounts        Account[]
+  sessions        Session[]
+  alerts          Alert[]
+}
+
+model Account {
+  id                 String    @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?   @db.Text
+  access_token       String?   @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?   @db.Text
+  session_state      String?
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SecurityEvent {
+  id          String    @id @default(cuid())
+  timestamp   DateTime  @default(now())
+  type        String
+  location    String
+  personId    String?
+  person      User?     @relation("PersonEvents", fields: [personId], references: [id])
+  details     String
+  severity    String    // 'low', 'medium', 'high'
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  metadata    Json?
+
+  @@index([timestamp])
+  @@index([type])
+  @@index([location])
+  @@index([personId])
+}
+
+model Permission {
+  id          String    @id @default(cuid())
+  role        String
+  resource    String
+  action      String    // 'read', 'write', 'admin'
+  location    String?
+  conditions  Json?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  updatedBy   String
+
+  @@unique([role, resource, action, location])
+  @@index([role])
+  @@index([resource])
+}
+
+model SecurityZone {
+  id            String        @id @default(cuid())
+  name          String
+  level         Int
+  requiredAccess String[]
+  locations     String[]
+  description   String?
+  parentZoneId  String?
+  parent        SecurityZone? @relation("ZoneHierarchy", fields: [parentZoneId], references: [id])
+  children      SecurityZone[] @relation("ZoneHierarchy")
+  settings      Json?
+  createdBy     String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  updatedBy     String
   cameras       Camera[]
-  notificationContacts NotificationContact[]
+  accessPoints  AccessPoint[]
+
+  @@unique([name, locations])
+  @@index([level])
 }
 
 model Camera {
-  id          String   @id @default(cuid())
+  id          String      @id @default(cuid())
   name        String
-  location    String?
   type        String
-  url         String
-  status      String   @default("offline")
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  location    String
+  status      String      // 'active', 'inactive', 'maintenance'
+  zoneId      String
+  zone        SecurityZone @relation(fields: [zoneId], references: [id])
+  settings    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   alerts      Alert[]
+
+  @@index([location])
+  @@index([status])
+  @@index([zoneId])
+}
+
+model AccessPoint {
+  id          String      @id @default(cuid())
+  name        String
+  type        String      // 'door', 'gate', 'elevator', etc.
+  location    String
+  status      String      // 'active', 'inactive', 'maintenance'
+  zoneId      String
+  zone        SecurityZone @relation(fields: [zoneId], references: [id])
+  settings    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([location])
+  @@index([status])
+  @@index([zoneId])
 }
 
 model Alert {
@@ -54,35 +169,4 @@ model Alert {
   updatedAt   DateTime  @updatedAt
   resolvedAt  DateTime?
   resolvedBy  String?
-}
-
-model ZonePermission {
-  id          String   @id @default(uuid())
-  userId      String
-  zoneId      String
-  accessLevel String
-  expiresAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id])
-  zone Zone @relation(fields: [zoneId], references: [id])
-}
-
-model Zone {
-  id          String           @id @default(uuid())
-  name        String
-  description String?
-  permissions ZonePermission[]
-}
-
-model NotificationContact {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String   // 'email' or 'phone'
-  value     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id])
 }

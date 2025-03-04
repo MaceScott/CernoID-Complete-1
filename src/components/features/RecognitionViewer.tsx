@@ -206,7 +206,7 @@ export function RecognitionViewer({
             <Label>Confidence Threshold</Label>
             <Slider
               value={[confidenceThreshold]}
-              onValueChange={([value]) => setConfidenceThreshold(value)}
+              onValueChange={(values: number[]) => setConfidenceThreshold(values[0])}
               min={0}
               max={1}
               step={0.05}

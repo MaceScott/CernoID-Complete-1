@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { apiClient } from './api-client'
-import { User, Camera, Alert, SystemStatus } from '@/types'
+import { apiClient } from '../api/api-client'
+import { Camera, Alert, SystemStatus } from '@/types'
 
 interface UseDataOptions<T> {
   initialData?: T

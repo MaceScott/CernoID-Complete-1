@@ -24,14 +24,7 @@ export const ImageUpload: React.FC = () => {
 
         try {
             const file = acceptedFiles[0];
-            const reader = new FileReader();
-
-            reader.onload = async () => {
-                const base64Image = reader.result as string;
-                await processImage(base64Image);
-            };
-
-            reader.readAsDataURL(file);
+            await processImage(file);
         } catch (err) {
             setError('Failed to process image. Please try again.');
         } finally {

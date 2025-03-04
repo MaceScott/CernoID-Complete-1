@@ -51,7 +51,7 @@ export const Unauthorized: React.FC = () => {
                         color="text.secondary"
                         sx={{ mb: 4 }}
                     >
-                        You don't have permission to access this page.
+                        You don&apos;t have permission to access this page.
                         Please contact your administrator if you believe this is an error.
                     </Typography>
 

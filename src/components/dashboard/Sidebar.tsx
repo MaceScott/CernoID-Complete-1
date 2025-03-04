@@ -8,14 +8,15 @@ import {
   ListItemText,
   ListItemButton,
   Divider,
-  useTheme
+  useTheme,
+  useMediaQuery
 } from '@mui/material';
 import {
   Dashboard,
   Security,
   People,
   DoorFront,
-  VideoCamera,
+  Videocam,
   History,
   Settings,
   Assessment,
@@ -31,7 +32,7 @@ const menuItems = [
   { title: 'Access Control', icon: <Security />, path: '/dashboard/access' },
   { title: 'Users', icon: <People />, path: '/dashboard/users' },
   { title: 'Doors', icon: <DoorFront />, path: '/dashboard/doors' },
-  { title: 'Cameras', icon: <VideoCamera />, path: '/dashboard/cameras' },
+  { title: 'Cameras', icon: <Videocam />, path: '/dashboard/cameras' },
   { title: 'Access History', icon: <History />, path: '/dashboard/history' },
   { title: 'Schedules', icon: <Schedule />, path: '/dashboard/schedules' },
   { title: 'Reports', icon: <Assessment />, path: '/dashboard/reports' },
@@ -39,14 +40,22 @@ const menuItems = [
   { title: 'Settings', icon: <Settings />, path: '/dashboard/settings' }
 ];
 
-export default function DashboardSidebar() {
+interface DashboardSidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export default function DashboardSidebar({ open, onClose }: DashboardSidebarProps) {
   const theme = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   return (
     <Drawer
-      variant="permanent"
+      variant={isMobile ? 'temporary' : 'permanent'}
+      open={isMobile ? open : true}
+      onClose={onClose}
       sx={{
         width: DRAWER_WIDTH,
         flexShrink: 0,
@@ -67,7 +76,12 @@ export default function DashboardSidebar() {
               <ListItem disablePadding>
                 <ListItemButton
                   selected={pathname === item.path}
-                  onClick={() => router.push(item.path)}
+                  onClick={() => {
+                    router.push(item.path);
+                    if (isMobile) {
+                      onClose();
+                    }
+                  }}
                   sx={{
                     '&.Mui-selected': {
                       backgroundColor: theme.palette.primary.main + '20',

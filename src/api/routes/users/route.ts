@@ -8,7 +8,7 @@ const userSchema = z.object({
   status: z.enum(['active', 'inactive']).default('active'),
 })
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: Request) {
   try {
     // TODO: Implement database query
     const users = [

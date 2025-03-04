@@ -18,10 +18,10 @@ from ..utils.errors import AnalyticsError
 
 @dataclass
 class AnalyticsPeriod:
-    """Analytics time period"""
+    """Time period for analytics"""
     start_time: datetime
     end_time: datetime
-    interval: str  # '1h', '1d', '1w', '1m'
+    interval: str = '1h'  # Supported: 1m, 5m, 15m, 1h, 1d
 
 @dataclass
 class SystemMetrics:
@@ -269,7 +269,18 @@ class AnalyticsEngine(BaseComponent):
             async with aiosqlite.connect(self._db_path) as db:
                 # Query performance data
                 query = '''
-                    SELECT *
+                    SELECT 
+                        timestamp,
+                        recognition_rate,
+                        accuracy,
+                        processing_time,
+                        error_rate,
+                        resource_usage,
+                        batch_size,
+                        cache_hits,
+                        cache_misses,
+                        gpu_utilization,
+                        memory_usage
                     FROM performance
                     WHERE timestamp BETWEEN ? AND ?
                     ORDER BY timestamp ASC
@@ -291,6 +302,28 @@ class AnalyticsEngine(BaseComponent):
                 # Parse resource usage
                 df['resource_usage'] = df['resource_usage'].apply(json.loads)
                 
+                # Resample data based on interval
+                interval_map = {
+                    '1m': '1T',
+                    '5m': '5T',
+                    '15m': '15T',
+                    '1h': '1H',
+                    '1d': '1D'
+                }
+                df = df.set_index('timestamp').resample(
+                    interval_map[period.interval]
+                ).agg({
+                    'recognition_rate': 'mean',
+                    'accuracy': 'mean',
+                    'processing_time': 'mean',
+                    'error_rate': 'mean',
+                    'batch_size': 'mean',
+                    'cache_hits': 'sum',
+                    'cache_misses': 'sum',
+                    'gpu_utilization': 'mean',
+                    'memory_usage': 'mean'
+                }).reset_index()
+                
                 return df
                 
         except Exception as e:
@@ -305,29 +338,61 @@ class AnalyticsEngine(BaseComponent):
             
             # Calculate statistics
             stats = {
-                'average_recognition_rate': float(df['recognition_rate'].mean()),
-                'average_accuracy': float(df['accuracy'].mean()),
-                'average_processing_time': float(df['processing_time'].mean()),
-                'average_error_rate': float(df['error_rate'].mean()),
-                'total_recognitions': int(df['recognition_rate'].sum() * self._metrics_interval),
-                'peak_processing_time': float(df['processing_time'].max()),
-                'min_accuracy': float(df['accuracy'].min())
+                'recognition': {
+                    'average_rate': float(df['recognition_rate'].mean()),
+                    'peak_rate': float(df['recognition_rate'].max()),
+                    'total_recognitions': int(df['recognition_rate'].sum() * self._metrics_interval)
+                },
+                'accuracy': {
+                    'average': float(df['accuracy'].mean()),
+                    'min': float(df['accuracy'].min()),
+                    'std_dev': float(df['accuracy'].std())
+                },
+                'performance': {
+                    'average_processing_time': float(df['processing_time'].mean()),
+                    'peak_processing_time': float(df['processing_time'].max()),
+                    'average_batch_size': float(df['batch_size'].mean())
+                },
+                'errors': {
+                    'average_error_rate': float(df['error_rate'].mean()),
+                    'peak_error_rate': float(df['error_rate'].max())
+                },
+                'caching': {
+                    'total_cache_hits': int(df['cache_hits'].sum()),
+                    'total_cache_misses': int(df['cache_misses'].sum()),
+                    'cache_hit_ratio': float(
+                        df['cache_hits'].sum() / 
+                        (df['cache_hits'].sum() + df['cache_misses'].sum())
+                    )
+                },
+                'resources': {
+                    'average_gpu_utilization': float(df['gpu_utilization'].mean()),
+                    'peak_gpu_utilization': float(df['gpu_utilization'].max()),
+                    'average_memory_usage': float(df['memory_usage'].mean()),
+                    'peak_memory_usage': float(df['memory_usage'].max())
+                }
             }
             
             # Generate plots
             plots = {
                 'recognition_rate': self._create_time_series(
-                    df, 'recognition_rate', 'Recognition Rate'
+                    df, 'recognition_rate', 'Recognition Rate',
+                    color='blue', fill=True
                 ),
                 'accuracy': self._create_time_series(
-                    df, 'accuracy', 'Accuracy'
+                    df, 'accuracy', 'Accuracy',
+                    color='green', fill=True
                 ),
                 'processing_time': self._create_time_series(
-                    df, 'processing_time', 'Processing Time'
+                    df, 'processing_time', 'Processing Time (ms)',
+                    color='orange'
                 ),
                 'error_rate': self._create_time_series(
-                    df, 'error_rate', 'Error Rate'
-                )
+                    df, 'error_rate', 'Error Rate',
+                    color='red'
+                ),
+                'resource_usage': self._create_resource_usage_plot(df),
+                'cache_performance': self._create_cache_performance_plot(df)
             }
             
             return {
@@ -346,28 +411,141 @@ class AnalyticsEngine(BaseComponent):
     def _create_time_series(self,
                           df: pd.DataFrame,
                           metric: str,
-                          title: str) -> Dict:
+                          title: str,
+                          color: str = 'blue',
+                          fill: bool = False) -> Dict:
         """Create time series plot"""
         try:
             fig = go.Figure()
             
+            # Add main trace
             fig.add_trace(go.Scatter(
                 x=df['timestamp'],
                 y=df[metric],
                 mode='lines',
-                name=metric
+                name=title,
+                line=dict(color=color),
+                fill='tozeroy' if fill else None
             ))
             
+            # Add trend line
+            z = np.polyfit(range(len(df)), df[metric], 1)
+            p = np.poly1d(z)
+            fig.add_trace(go.Scatter(
+                x=df['timestamp'],
+                y=p(range(len(df))),
+                mode='lines',
+                name='Trend',
+                line=dict(
+                    color='rgba(0,0,0,0.3)',
+                    dash='dash'
+                )
+            ))
+            
+            # Update layout
             fig.update_layout(
                 title=title,
                 xaxis_title='Time',
-                yaxis_title=metric.replace('_', ' ').title()
+                yaxis_title=metric.replace('_', ' ').title(),
+                showlegend=True,
+                hovermode='x unified'
             )
             
             return fig.to_dict()
             
         except Exception as e:
-            self.logger.error(f"Plot creation failed: {str(e)}")
+            self.logger.error(f"Failed to create time series plot: {str(e)}")
+            return {}
+
+    def _create_resource_usage_plot(self, df: pd.DataFrame) -> Dict:
+        """Create resource usage plot"""
+        try:
+            fig = go.Figure()
+            
+            # Add GPU utilization
+            fig.add_trace(go.Scatter(
+                x=df['timestamp'],
+                y=df['gpu_utilization'],
+                mode='lines',
+                name='GPU Utilization',
+                line=dict(color='purple')
+            ))
+            
+            # Add memory usage
+            fig.add_trace(go.Scatter(
+                x=df['timestamp'],
+                y=df['memory_usage'],
+                mode='lines',
+                name='Memory Usage',
+                line=dict(color='blue')
+            ))
+            
+            # Update layout
+            fig.update_layout(
+                title='Resource Usage',
+                xaxis_title='Time',
+                yaxis_title='Percentage',
+                showlegend=True,
+                hovermode='x unified'
+            )
+            
+            return fig.to_dict()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create resource usage plot: {str(e)}")
+            return {}
+
+    def _create_cache_performance_plot(self, df: pd.DataFrame) -> Dict:
+        """Create cache performance plot"""
+        try:
+            fig = go.Figure()
+            
+            # Add cache hits
+            fig.add_trace(go.Bar(
+                x=df['timestamp'],
+                y=df['cache_hits'],
+                name='Cache Hits',
+                marker_color='green'
+            ))
+            
+            # Add cache misses
+            fig.add_trace(go.Bar(
+                x=df['timestamp'],
+                y=df['cache_misses'],
+                name='Cache Misses',
+                marker_color='red'
+            ))
+            
+            # Add hit ratio line
+            hit_ratio = df['cache_hits'] / (df['cache_hits'] + df['cache_misses'])
+            fig.add_trace(go.Scatter(
+                x=df['timestamp'],
+                y=hit_ratio,
+                mode='lines',
+                name='Hit Ratio',
+                yaxis='y2',
+                line=dict(color='blue')
+            ))
+            
+            # Update layout
+            fig.update_layout(
+                title='Cache Performance',
+                xaxis_title='Time',
+                yaxis_title='Count',
+                yaxis2=dict(
+                    title='Hit Ratio',
+                    overlaying='y',
+                    side='right',
+                    range=[0, 1]
+                ),
+                showlegend=True,
+                hovermode='x unified'
+            )
+            
+            return fig.to_dict()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create cache performance plot: {str(e)}")
             return {}
 
     async def get_stats(self) -> Dict:

@@ -1,43 +1,59 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { api } from '../services/api';
-import { RecognitionResult } from '../types';
 
-export const useRecognition = () => {
-    const [results, setResults] = useState<RecognitionResult | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+interface RecognitionResult {
+  id: string;
+  confidence: number;
+  person: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  timestamp: string;
+}
 
-    const processImage = useCallback(async (imageData: string) => {
-        setLoading(true);
-        setError(null);
-        
-        try {
-            const response = await api.post('/recognition/process', {
-                image: imageData
-            });
-            
-            setResults(response.data);
-            return response.data;
-        } catch (err: any) {
-            const errorMessage = err.response?.data?.message || 
-                'Failed to process image';
-            setError(errorMessage);
-            throw new Error(errorMessage);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+interface UseRecognitionReturn {
+  processImage: (file: File) => Promise<RecognitionResult>;
+  results: RecognitionResult[];
+  loading: boolean;
+  error: string | null;
+}
 
-    const clearResults = useCallback(() => {
-        setResults(null);
-        setError(null);
-    }, []);
+export const useRecognition = (): UseRecognitionReturn => {
+  const [results, setResults] = useState<RecognitionResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    return {
-        results,
-        loading,
-        error,
-        processImage,
-        clearResults
-    };
+  const processImage = async (file: File): Promise<RecognitionResult> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await api.post('/recognition/process', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const result = response.data;
+      setResults(prev => [...prev, result]);
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to process image';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    processImage,
+    results,
+    loading,
+    error,
+  };
 }; 

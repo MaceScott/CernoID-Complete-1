@@ -1,21 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  experimental: {
-    serverActions: {
-      enabled: true
-    }
+  images: {
+    domains: ['localhost'],
   },
-  output: 'standalone',
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        ws: false,
-      };
-    }
+  webpack: (config) => {
+    config.externals.push({
+      'utf-8-validate': 'commonjs utf-8-validate',
+      'bufferutil': 'commonjs bufferutil',
+    });
     return config;
   },
-}
+};
 
-module.exports = nextConfig 
+module.exports = nextConfig; 

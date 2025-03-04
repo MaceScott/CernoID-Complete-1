@@ -1,11 +1,11 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { CircularProgress, Box } from '@mui/material';
 import { useApp } from '../../context/AppContext';
+import { CircularProgress, Box } from '@mui/material';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
-    requiredRole?: string;
+    requiredRole?: 'admin' | 'user' | 'security';
     requiredPermissions?: string[];
 }
 
@@ -14,20 +14,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     requiredRole,
     requiredPermissions
 }) => {
-    const { user, isInitialized } = useApp();
+    const { state: { user }, isInitialized } = useApp();
     const location = useLocation();
 
     // Show loading while checking authentication
     if (!isInitialized) {
         return (
-            <Box 
-                sx={{ 
-                    display: 'flex', 
-                    justifyContent: 'center', 
-                    alignItems: 'center',
-                    height: '100vh' 
-                }}
-            >
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
                 <CircularProgress />
             </Box>
         );
@@ -38,16 +31,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    // Check role requirement
-    if (requiredRole && user.role !== requiredRole) {
+    // Check role if required
+    if (requiredRole && user.role !== requiredRole && !user.isAdmin) {
         return <Navigate to="/unauthorized" replace />;
     }
 
-    // Check permissions requirement
-    if (requiredPermissions) {
-        const hasRequiredPermissions = requiredPermissions.every(
-            permission => user.permissions.includes(permission)
+    // Admin users have access to all permissions
+    if (user.isAdmin) {
+        return <>{children}</>;
+    }
+
+    // Check permissions if required
+    if (requiredPermissions && requiredPermissions.length > 0) {
+        const hasRequiredPermissions = requiredPermissions.every(permission =>
+            user.allowedZones.includes(permission)
         );
+
         if (!hasRequiredPermissions) {
             return <Navigate to="/unauthorized" replace />;
         }

@@ -1,21 +1,30 @@
-import { Box, CssBaseline, ThemeProvider } from '@mui/material';
+'use client';
+
+import { Box, CssBaseline } from '@mui/material';
+import { useState } from 'react';
 import DashboardHeader from '@/components/dashboard/Header';
 import DashboardSidebar from '@/components/dashboard/Sidebar';
-import { theme } from '@/theme';
 import { AuthProvider } from '@/providers/AuthProvider';
+import { ThemeProvider } from '../../frontend/src/providers/ThemeProvider';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeProvider>
       <CssBaseline />
       <AuthProvider>
         <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-          <DashboardHeader />
-          <DashboardSidebar />
+          <DashboardHeader onToggleSidebar={toggleSidebar} />
+          <DashboardSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
           <Box
             component="main"
             sx={{

@@ -25,6 +25,7 @@ from queue import Queue
 import psutil
 import GPUtil
 import logging
+from pathlib import Path
 
 from .base import BaseComponent
 from .errors import OptimizationError
@@ -32,10 +33,18 @@ from .errors import OptimizationError
 @dataclass
 class OptimizationConfig:
     """Configuration for optimization settings"""
-    batch_size: int
-    use_amp: bool  # Automatic mixed precision
-    num_workers: int
-    pin_memory: bool
+    batch_size: int = 32
+    use_amp: bool = True  # Automatic mixed precision
+    num_workers: int = 4
+    pin_memory: bool = True
+    cache_size: int = 10000
+    feature_dim: int = 512
+    min_batch_size: int = 1
+    max_batch_size: int = 64
+    batch_timeout: float = 0.1
+    tensorrt_precision: str = 'fp16'
+    tensorrt_workspace: int = 1 << 30
+    tensorrt_cache_path: str = 'models/trt'
     
 @dataclass
 class PerformanceMetrics:
@@ -56,45 +65,47 @@ class FaceRecognitionOptimizer(BaseComponent):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         
-        # Optimization settings
-        self._enable_tensorrt = config.get('optimization.tensorrt', True)
-        self._enable_quantization = config.get('optimization.quantize', True)
-        self._enable_batching = config.get('optimization.batching', True)
-        self._enable_caching = config.get('optimization.caching', True)
+        # Initialize configuration
+        self.config = OptimizationConfig(
+            batch_size=config.get('optimization.batch_size', 32),
+            use_amp=config.get('optimization.use_amp', True),
+            num_workers=config.get('optimization.num_workers', 4),
+            pin_memory=config.get('optimization.pin_memory', True),
+            cache_size=config.get('optimization.cache_size', 10000),
+            feature_dim=config.get('optimization.feature_dim', 512),
+            min_batch_size=config.get('optimization.min_batch_size', 1),
+            max_batch_size=config.get('optimization.max_batch_size', 64),
+            batch_timeout=config.get('optimization.batch_timeout', 0.1),
+            tensorrt_precision=config.get('optimization.precision', 'fp16'),
+            tensorrt_workspace=config.get('optimization.workspace_size', 1 << 30),
+            tensorrt_cache_path=config.get('optimization.engine_cache', 'models/trt')
+        )
         
-        # TensorRT settings
-        self._trt_precision = config.get('optimization.precision', 'fp16')
-        self._trt_workspace = config.get('optimization.workspace_size', 1 << 30)
-        self._trt_cache_path = config.get('optimization.engine_cache', 'models/trt')
-        
-        # Batch processing
-        self._min_batch_size = config.get('optimization.min_batch', 1)
-        self._max_batch_size = config.get('optimization.max_batch', 32)
-        self._batch_timeout = config.get('optimization.batch_timeout', 0.1)
-        
-        # Feature caching
-        self._cache_size = config.get('optimization.cache_size', 1000)
-        self._feature_cache: Dict[str, np.ndarray] = {}
+        # Initialize caches
+        self._feature_cache = {}
         self._cache_lock = threading.Lock()
         
-        # Processing queues
+        # Initialize queues
         self._preprocessing_queue = Queue(maxsize=100)
         self._inference_queue = Queue(maxsize=100)
         self._postprocessing_queue = Queue(maxsize=100)
         
-        # Worker threads
+        # Initialize workers
         self._preprocessing_workers = []
         self._inference_workers = []
         self._postprocessing_workers = []
         
-        # Performance monitoring
+        # Initialize metrics
         self._metrics_history: List[PerformanceMetrics] = []
         self._max_history = config.get('optimization.metrics_history', 1000)
         
-        # Initialize optimizations
-        self._initialize_optimizations()
+        # Initialize TensorRT
+        self._initialize_tensorrt()
         
-        # Statistics
+        # Initialize workers
+        self._start_workers()
+        
+        # Initialize statistics
         self._stats = {
             'total_processed': 0,
             'average_inference_time': 0.0,
@@ -106,93 +117,67 @@ class FaceRecognitionOptimizer(BaseComponent):
 
         self.logger = logging.getLogger(__name__)
 
-    def _initialize_optimizations(self) -> None:
-        """Initialize optimization components"""
-        try:
-            # Initialize TensorRT if enabled
-            if self._enable_tensorrt:
-                self._initialize_tensorrt()
-            
-            # Initialize quantization if enabled
-            if self._enable_quantization:
-                self._initialize_quantization()
-            
-            # Start worker threads
-            self._start_workers()
-            
-        except Exception as e:
-            raise OptimizationError(f"Optimization initialization failed: {str(e)}")
-
     def _initialize_tensorrt(self) -> None:
-        """Initialize TensorRT optimization"""
+        """Initialize TensorRT engine."""
         try:
-            # Create TensorRT logger
-            trt_logger = trt.Logger(trt.Logger.WARNING)
+            # Create TensorRT builder
+            TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+            builder = trt.Builder(TRT_LOGGER)
             
-            # Create builder and network
-            builder = trt.Builder(trt_logger)
-            network = builder.create_network(
-                1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+            # Create network
+            EXPLICIT_BATCH = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+            network = builder.create_network(EXPLICIT_BATCH)
+            
+            # Create optimization profile
+            profile = builder.create_optimization_profile()
+            profile.set_shape(
+                "input",  # Input tensor name
+                (self.config.min_batch_size, 3, 112, 112),  # Min shape
+                (self.config.batch_size, 3, 112, 112),      # Opt shape
+                (self.config.max_batch_size, 3, 112, 112)   # Max shape
             )
             
-            # Set builder config
+            # Create config
             config = builder.create_builder_config()
-            config.max_workspace_size = self._trt_workspace
+            config.add_optimization_profile(profile)
+            config.max_workspace_size = self.config.tensorrt_workspace
             
             # Set precision
-            if self._trt_precision == 'fp16':
+            if self.config.tensorrt_precision == 'fp16':
                 config.set_flag(trt.BuilderFlag.FP16)
-            elif self._trt_precision == 'int8':
-                config.set_flag(trt.BuilderFlag.INT8)
             
             # Parse ONNX model
-            parser = trt.OnnxParser(network, trt_logger)
-            model_path = self.config.get('model.path')
-            success = parser.parse_from_file(model_path)
+            parser = trt.OnnxParser(network, TRT_LOGGER)
+            onnx_path = Path(self.config.tensorrt_cache_path) / 'model.onnx'
+            success = parser.parse_from_file(str(onnx_path))
             
             if not success:
-                raise OptimizationError("Failed to parse ONNX model")
+                error_msgs = []
+                for idx in range(parser.num_errors):
+                    error_msgs.append(parser.get_error(idx))
+                raise OptimizationError(f"Failed to parse ONNX model: {error_msgs}")
             
             # Build engine
-            self._trt_engine = builder.build_engine(network, config)
-            if not self._trt_engine:
+            engine = builder.build_engine(network, config)
+            if engine is None:
                 raise OptimizationError("Failed to build TensorRT engine")
             
             # Save engine
-            with open(self._trt_cache_path, 'wb') as f:
-                f.write(self._trt_engine.serialize())
+            engine_path = Path(self.config.tensorrt_cache_path) / 'model.engine'
+            engine_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(engine_path, 'wb') as f:
+                f.write(engine.serialize())
+            
+            self.logger.info("TensorRT engine initialized successfully")
             
         except Exception as e:
             raise OptimizationError(f"TensorRT initialization failed: {str(e)}")
 
-    def _initialize_quantization(self) -> None:
-        """Initialize model quantization"""
-        try:
-            # Load model
-            model = torch.load(self.config.get('model.path'))
-            
-            # Quantize model
-            quantized_model = torch.quantization.quantize_dynamic(
-                model,
-                {torch.nn.Linear, torch.nn.Conv2d},
-                dtype=torch.qint8
-            )
-            
-            # Save quantized model
-            torch.save(
-                quantized_model,
-                self.config.get('model.path') + '.quantized'
-            )
-            
-        except Exception as e:
-            raise OptimizationError(f"Quantization failed: {str(e)}")
-
     def _start_workers(self) -> None:
-        """Start worker threads for parallel processing"""
+        """Start worker threads."""
         try:
             # Start preprocessing workers
-            num_cpu_workers = psutil.cpu_count() // 2
-            for _ in range(num_cpu_workers):
+            for _ in range(self.config.num_workers):
                 worker = threading.Thread(
                     target=self._preprocessing_worker,
                     daemon=True
@@ -201,8 +186,7 @@ class FaceRecognitionOptimizer(BaseComponent):
                 self._preprocessing_workers.append(worker)
             
             # Start inference workers
-            num_gpu_workers = len(GPUtil.getGPUs())
-            for _ in range(num_gpu_workers):
+            for _ in range(torch.cuda.device_count()):
                 worker = threading.Thread(
                     target=self._inference_worker,
                     daemon=True
@@ -211,27 +195,33 @@ class FaceRecognitionOptimizer(BaseComponent):
                 self._inference_workers.append(worker)
             
             # Start postprocessing workers
-            for _ in range(num_cpu_workers):
+            for _ in range(self.config.num_workers):
                 worker = threading.Thread(
                     target=self._postprocessing_worker,
                     daemon=True
                 )
                 worker.start()
                 self._postprocessing_workers.append(worker)
+                
+            self.logger.info(
+                f"Started {len(self._preprocessing_workers)} preprocessing workers, "
+                f"{len(self._inference_workers)} inference workers, and "
+                f"{len(self._postprocessing_workers)} postprocessing workers"
+            )
             
         except Exception as e:
             raise OptimizationError(f"Failed to start workers: {str(e)}")
 
     def _preprocessing_worker(self) -> None:
-        """Worker thread for preprocessing face images"""
+        """Worker thread for preprocessing face images."""
         while True:
             try:
                 # Get batch from queue
                 batch = []
                 start_time = datetime.utcnow()
                 
-                while (len(batch) < self._max_batch_size and
-                       (datetime.utcnow() - start_time).total_seconds() < self._batch_timeout):
+                while (len(batch) < self.config.max_batch_size and
+                       (datetime.utcnow() - start_time).total_seconds() < self.config.batch_timeout):
                     try:
                         item = self._preprocessing_queue.get_nowait()
                         batch.append(item)
@@ -255,11 +245,34 @@ class FaceRecognitionOptimizer(BaseComponent):
                             processed_batch.append(self._feature_cache[cache_key])
                             continue
                     
-                    # Resize and normalize
-                    face_tensor = self._preprocess_face(face_img)
-                    if face_tensor is not None:
+                    # Preprocess image
+                    try:
+                        # Resize to 112x112
+                        face_img = cv2.resize(face_img, (112, 112))
+                        
+                        # Convert to RGB
+                        if len(face_img.shape) == 2:
+                            face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2RGB)
+                        elif face_img.shape[2] == 4:
+                            face_img = cv2.cvtColor(face_img, cv2.COLOR_BGRA2RGB)
+                        elif face_img.shape[2] == 3:
+                            face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+                            
+                        # Normalize
+                        face_img = face_img.astype(np.float32) / 255.0
+                        face_img = (face_img - 0.5) / 0.5
+                        
+                        # Convert to tensor
+                        face_tensor = torch.from_numpy(face_img).permute(2, 0, 1)
+                        if self.config.pin_memory:
+                            face_tensor = face_tensor.pin_memory()
+                            
                         processed_batch.append(face_tensor)
                         self._stats['cache_misses'] += 1
+                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to preprocess image: {str(e)}")
+                        continue
                 
                 # Put processed batch in inference queue
                 if processed_batch:
@@ -269,114 +282,107 @@ class FaceRecognitionOptimizer(BaseComponent):
                 self.logger.error(f"Preprocessing worker error: {str(e)}")
 
     def _inference_worker(self) -> None:
-        """Worker thread for model inference"""
-        while True:
-            try:
-                # Get batch from queue
-                batch = self._inference_queue.get()
-                
-                # Run inference
-                with autocast(enabled=self._enable_amp):
-                    if self._enable_tensorrt:
-                        features = self._trt_inference(batch)
-                    else:
-                        features = self.model(batch)
-                
-                # Update cache
-                if self._enable_caching:
-                    with self._cache_lock:
-                        for face_img, feature in zip(batch, features):
-                            cache_key = self._get_cache_key(face_img)
-                            self._feature_cache[cache_key] = feature
-                            
-                            # Limit cache size
-                            if len(self._feature_cache) > self._cache_size:
-                                self._feature_cache.pop(next(iter(self._feature_cache)))
-                
-                # Put results in postprocessing queue
-                self._postprocessing_queue.put(features)
-                
-            except Exception as e:
-                self.logger.error(f"Inference worker error: {str(e)}")
+        """Worker thread for model inference."""
+        try:
+            # Load TensorRT engine
+            TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+            engine_path = Path(self.config.tensorrt_cache_path) / 'model.engine'
+            
+            with open(engine_path, 'rb') as f:
+                engine_bytes = f.read()
+            
+            runtime = trt.Runtime(TRT_LOGGER)
+            engine = runtime.deserialize_cuda_engine(engine_bytes)
+            
+            # Create execution context
+            context = engine.create_execution_context()
+            
+            while True:
+                try:
+                    # Get batch from queue
+                    batch = self._inference_queue.get()
+                    if not batch:
+                        continue
+                    
+                    # Stack tensors
+                    batch_tensor = torch.stack(batch).cuda()
+                    
+                    # Run inference
+                    with autocast(enabled=self.config.use_amp):
+                        # Allocate output buffer
+                        output = torch.empty(
+                            (len(batch), self.config.feature_dim),
+                            dtype=torch.float32,
+                            device='cuda'
+                        )
+                        
+                        # Set input shape
+                        context.set_binding_shape(
+                            0,  # Input binding index
+                            (len(batch), 3, 112, 112)
+                        )
+                        
+                        # Run inference
+                        bindings = [
+                            batch_tensor.data_ptr(),
+                            output.data_ptr()
+                        ]
+                        context.execute_v2(bindings)
+                        
+                        # Normalize output features
+                        output = torch.nn.functional.normalize(output, p=2, dim=1)
+                        
+                    # Put results in postprocessing queue
+                    self._postprocessing_queue.put(output.cpu())
+                    
+                except Exception as e:
+                    self.logger.error(f"Inference worker error: {str(e)}")
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to initialize inference worker: {str(e)}")
 
     def _postprocessing_worker(self) -> None:
-        """Worker thread for postprocessing results"""
+        """Worker thread for postprocessing results."""
         while True:
             try:
                 # Get batch from queue
-                features = self._postprocessing_queue.get()
+                batch = self._postprocessing_queue.get()
+                if not batch:
+                    continue
+                
+                # Update cache
+                with self._cache_lock:
+                    for idx, features in enumerate(batch):
+                        if len(self._feature_cache) >= self.config.cache_size:
+                            # Remove oldest entry
+                            oldest_key = next(iter(self._feature_cache))
+                            del self._feature_cache[oldest_key]
+                        
+                        # Add new entry
+                        cache_key = self._get_cache_key(features)
+                        self._feature_cache[cache_key] = features
                 
                 # Update statistics
-                self._stats['total_processed'] += len(features)
-                
-                # Update GPU metrics
-                gpus = GPUtil.getGPUs()
-                if gpus:
-                    self._stats['gpu_utilization'] = gpus[0].load * 100
-                    self._stats['memory_usage'] = gpus[0].memoryUtil * 100
+                self._stats['total_processed'] += len(batch)
                 
             except Exception as e:
                 self.logger.error(f"Postprocessing worker error: {str(e)}")
 
-    def _preprocess_face(self, face_img: np.ndarray) -> Optional[torch.Tensor]:
-        """Preprocess face image for model input"""
-        try:
-            # Resize to model input size
-            input_size = self.config.get('model.input_size', (112, 112))
-            face_img = cv2.resize(face_img, input_size)
-            
-            # Normalize
-            face_img = face_img.astype(np.float32) / 255.0
-            face_img = (face_img - 0.5) / 0.5
-            
-            # Convert to tensor
-            face_tensor = torch.from_numpy(face_img).permute(2, 0, 1)
-            face_tensor = face_tensor.unsqueeze(0)
-            
-            return face_tensor
-            
-        except Exception as e:
-            self.logger.error(f"Face preprocessing error: {str(e)}")
-            return None
-
-    def _get_cache_key(self, face_img: np.ndarray) -> str:
-        """Generate cache key for face image"""
-        return str(hash(face_img.tobytes()))
-
-    def _trt_inference(self, batch_input: torch.Tensor) -> torch.Tensor:
-        """Run inference using TensorRT engine"""
-        try:
-            # Create execution context
-            context = self._trt_engine.create_execution_context()
-            
-            # Allocate memory
-            input_shape = (len(batch_input),) + tuple(batch_input.shape[1:])
-            output_shape = (len(batch_input), self.config.get('model.feature_dim'))
-            
-            d_input = cuda.mem_alloc(batch_input.numel() * batch_input.element_size())
-            d_output = cuda.mem_alloc(np.prod(output_shape) * 4)  # float32
-            
-            # Copy input to GPU
-            cuda.memcpy_htod(d_input, batch_input.numpy())
-            
-            # Run inference
-            context.execute_v2(bindings=[int(d_input), int(d_output)])
-            
-            # Copy output back to CPU
-            output = np.empty(output_shape, dtype=np.float32)
-            cuda.memcpy_dtoh(output, d_output)
-            
-            return torch.from_numpy(output)
-            
-        except Exception as e:
-            raise OptimizationError(f"TensorRT inference failed: {str(e)}")
+    def _get_cache_key(self, data: Union[np.ndarray, torch.Tensor]) -> str:
+        """Generate cache key for data."""
+        if isinstance(data, np.ndarray):
+            return hash(data.tobytes())
+        elif isinstance(data, torch.Tensor):
+            return hash(data.cpu().numpy().tobytes())
+        else:
+            raise ValueError(f"Unsupported data type: {type(data)}")
 
     def _update_metrics(self,
                        inference_time: float,
                        preprocessing_time: float,
                        postprocessing_time: float,
                        batch_size: int) -> None:
-        """Update performance metrics"""
+        """Update performance metrics."""
         try:
             # Calculate metrics
             total_time = inference_time + preprocessing_time + postprocessing_time
@@ -405,13 +411,20 @@ class FaceRecognitionOptimizer(BaseComponent):
             if len(self._metrics_history) > self._max_history:
                 self._metrics_history.pop(0)
                 
+            # Update statistics
+            self._stats.update({
+                'average_inference_time': np.mean([m.inference_time for m in self._metrics_history]),
+                'gpu_utilization': gpu_util,
+                'memory_usage': mem_usage
+            })
+                
         except Exception as e:
             self.logger.error(f"Metrics update error: {str(e)}")
 
     async def get_metrics(self,
                          start_time: Optional[datetime] = None,
                          end_time: Optional[datetime] = None) -> List[PerformanceMetrics]:
-        """Get performance metrics for specified time range"""
+        """Get performance metrics for specified time range."""
         try:
             if not start_time:
                 start_time = datetime.min
@@ -428,14 +441,14 @@ class FaceRecognitionOptimizer(BaseComponent):
             return []
 
     async def get_stats(self) -> Dict[str, Any]:
-        """Get current optimization statistics"""
+        """Get current optimization statistics."""
         return self._stats.copy()
 
     def optimize_model(self, model: nn.Module) -> nn.Module:
         """Apply optimization techniques to model"""
         try:
             # Enable AMP if configured
-            if self.config.get('optimization.amp', True):
+            if self.config.use_amp:
                 model = model.half()
             
             # Enable TensorRT if configured

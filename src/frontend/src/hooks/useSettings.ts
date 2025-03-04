@@ -1,83 +1,93 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { AppSettings } from '../types';
-import { useApp } from '../context/AppContext';
 
-export const useSettings = () => {
-    const { dispatch } = useApp();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+interface UseSettingsReturn {
+    settings: AppSettings | null;
+    loading: boolean;
+    error: string | null;
+    updateSettings: (newSettings: AppSettings) => Promise<void>;
+    resetSettings: () => Promise<void>;
+}
+
+const defaultSettings: AppSettings = {
+    recognition: {
+        min_confidence: 0.5,
+        max_faces: 10,
+        use_gpu: true,
+        model_type: 'default'
+    },
+    security: {
+        token_expiry: 30,
+        max_attempts: 3,
+        lockout_duration: 15,
+        require_2fa: false
+    },
+    performance: {
+        batch_size: 16,
+        cache_enabled: true,
+        cache_size: 1000,
+        worker_threads: 4
+    },
+    monitoring: {
+        metrics_enabled: true,
+        log_level: 'info',
+        retention_days: 30,
+        alert_threshold: 0.9
+    }
+};
+
+export const useSettings = (): UseSettingsReturn => {
     const [settings, setSettings] = useState<AppSettings | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const fetchSettings = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-
+    const fetchSettings = async () => {
         try {
-            const response = await api.get<AppSettings>('/settings');
+            setLoading(true);
+            const response = await api.get('/settings');
             setSettings(response.data);
-            dispatch({ type: 'SET_SETTINGS', payload: response.data });
-            return response.data;
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to fetch settings');
-            throw err;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
         } finally {
             setLoading(false);
         }
-    }, [dispatch]);
+    };
 
-    const updateSettings = useCallback(async (
-        updates: Partial<AppSettings>
-    ) => {
-        setLoading(true);
-        setError(null);
-
+    const updateSettings = async (newSettings: AppSettings) => {
         try {
-            const response = await api.put<AppSettings>('/settings', updates);
-            dispatch({ type: 'SET_SETTINGS', payload: response.data });
-            return response.data;
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to update settings');
+            setLoading(true);
+            await api.put('/settings', newSettings);
+            setSettings(newSettings);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
             throw err;
         } finally {
             setLoading(false);
         }
-    }, [dispatch]);
+    };
 
-    const resetSettings = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-
+    const resetSettings = async () => {
         try {
-            const response = await api.post<AppSettings>('/settings/reset');
-            dispatch({ type: 'SET_SETTINGS', payload: response.data });
-            return response.data;
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to reset settings');
+            setLoading(true);
+            await api.post('/settings/reset');
+            setSettings(defaultSettings);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
             throw err;
         } finally {
             setLoading(false);
         }
-    }, [dispatch]);
+    };
 
     useEffect(() => {
-        const loadSettings = async () => {
-            try {
-                const response = await api.get<AppSettings>('/settings');
-                setSettings(response.data);
-                dispatch({ type: 'SET_SETTINGS', payload: response.data });
-            } catch (err: any) {
-                setError(err.response?.data?.message || 'Failed to fetch settings');
-            }
-        };
-        loadSettings();
-    }, [dispatch]);
+        fetchSettings();
+    }, []);
 
     return {
         settings,
         loading,
         error,
-        fetchSettings,
         updateSettings,
         resetSettings
     };

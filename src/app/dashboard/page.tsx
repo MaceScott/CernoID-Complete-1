@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import {
   Grid,
@@ -20,6 +22,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import DashboardCard from '@/components/dashboard/DashboardCard';
 import AccessActivityList from '@/components/dashboard/AccessActivityList';
 import AlertsList from '@/components/dashboard/AlertsList';
+import { useAuth } from '@/providers/AuthProvider';
 
 const mockData = {
   activeUsers: 156,
@@ -40,6 +43,19 @@ const mockData = {
 
 export default function DashboardPage() {
   const theme = useTheme();
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <LinearProgress />
+      </Box>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <Box>

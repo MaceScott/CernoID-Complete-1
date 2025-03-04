@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Outlet } from 'react-router-dom';
 import {
+    AppBar,
     Box,
     CssBaseline,
-    Container,
+    Drawer,
+    IconButton,
     ThemeProvider,
-    createTheme,
-    useMediaQuery
+    Toolbar,
+    Typography,
+    useMediaQuery,
+    createTheme
 } from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
 import { Navigation } from './Navigation';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary';
 import { useApp } from '../../context/AppContext';
@@ -15,22 +20,15 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 export const Layout: React.FC = () => {
-    const { theme: themeMode } = useApp();
+    const { state: { theme: themeMode } } = useApp();
     const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [themeModeState, setThemeMode] = useState('light');
 
-    // Update themeMode based on prefersDarkMode after component mounts
-    useEffect(() => {
-        setThemeMode(prefersDarkMode ? 'dark' : 'light');
-    }, [prefersDarkMode]);
-
-    // Create theme based on user preference or system preference
-    const theme = React.useMemo(
+    const theme = useMemo(
         () =>
             createTheme({
                 palette: {
-                    mode: prefersDarkMode ? 'dark' : 'light',
+                    mode: themeMode === 'dark' || prefersDarkMode ? 'dark' : 'light',
                     primary: {
                         main: '#1976d2',
                         light: '#42a5f5',
@@ -53,40 +51,56 @@ export const Layout: React.FC = () => {
                     }
                 }
             }),
-        [prefersDarkMode]
+        [themeMode, prefersDarkMode]
     );
+
+    const handleDrawerToggle = () => {
+        setDrawerOpen(!drawerOpen);
+    };
 
     return (
         <ThemeProvider theme={theme}>
             <Box sx={{ display: 'flex' }}>
                 <CssBaseline />
-                
-                <Navigation
+                <AppBar position="fixed">
+                    <Toolbar>
+                        <IconButton
+                            color="inherit"
+                            aria-label="open drawer"
+                            edge="start"
+                            onClick={handleDrawerToggle}
+                            sx={{ mr: 2 }}
+                        >
+                            <MenuIcon />
+                        </IconButton>
+                        <Typography variant="h6" noWrap component="div">
+                            CernoID Security
+                        </Typography>
+                    </Toolbar>
+                </AppBar>
+                <Drawer
+                    variant="temporary"
+                    anchor="left"
                     open={drawerOpen}
-                    onClose={() => setDrawerOpen(false)}
-                    onOpen={() => setDrawerOpen(true)}
-                />
-
+                    onClose={handleDrawerToggle}
+                    ModalProps={{
+                        keepMounted: true,
+                    }}
+                >
+                    <Navigation onItemClick={() => setDrawerOpen(false)} />
+                </Drawer>
                 <Box
                     component="main"
                     sx={{
                         flexGrow: 1,
-                        height: '100vh',
-                        overflow: 'auto',
-                        backgroundColor: (theme) =>
-                            theme.palette.mode === 'light'
-                                ? theme.palette.grey[100]
-                                : theme.palette.grey[900]
+                        p: 3,
+                        width: { sm: `calc(100% - 240px)` }
                     }}
                 >
-                    {/* Toolbar spacer */}
-                    <Box sx={{ height: 64 }} />
-
-                    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-                        <ErrorBoundary>
-                            <Outlet />
-                        </ErrorBoundary>
-                    </Container>
+                    <Toolbar />
+                    <ErrorBoundary>
+                        <Outlet />
+                    </ErrorBoundary>
                 </Box>
 
                 {/* Toast notifications */}

@@ -16,7 +16,7 @@ const settingsSchema = z.object({
   cameraQuality: z.enum(['low', 'medium', 'high']),
 })
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: Request) {
   try {
     // TODO: Implement database query
     const settings = {

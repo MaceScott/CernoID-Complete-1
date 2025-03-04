@@ -1,8 +1,49 @@
-node_modules
-.next
-out
-build
+# Version control
 .git
-.env*
-.DS_Store
-README.md 
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.env
+
+# Development
+.vscode/
+*.log
+*.sqlite3
+*.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Data and media
+data/
+media/
+*.pkl
+*.h5
+
+# Documentation
+docs/
+*.md
+
+# Tests
+tests/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+.DS_Store 

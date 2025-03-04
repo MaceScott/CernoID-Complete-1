@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { WebSocketServer } from 'ws'
 
 // Note: This requires additional server setup as Next.js API routes
@@ -43,9 +43,9 @@ function broadcast(message: any) {
 }
 
 // This is a placeholder route handler as Next.js API routes don't support WebSocket directly
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   return new Response('WebSocket endpoint', {
     status: 426,
     statusText: 'Upgrade Required'
-  })
+  });
 } 

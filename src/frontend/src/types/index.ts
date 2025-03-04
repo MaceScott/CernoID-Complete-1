@@ -1,12 +1,112 @@
 export interface User {
-    id: number;
+    id: string;
     username: string;
     email: string;
+    name?: string;
     role: string;
-    permissions: string[];
-    is_active: boolean;
-    last_login?: string;
-    created_at: string;
+    status: 'active' | 'inactive' | 'suspended';
+    isAdmin: boolean;
+    accessLevel: string;
+    allowedZones: string[];
+    lastLogin?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface Camera {
+    id: string;
+    name: string;
+    type: string;
+    location: string;
+    status: 'active' | 'inactive' | 'maintenance';
+    zoneId: string;
+    zone?: {
+        id: string;
+        name: string;
+        level: number;
+    };
+    settings?: Record<string, unknown>;
+    alerts?: Alert[];
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface Alert {
+    id: string;
+    type: string;
+    severity: string;
+    message: string;
+    status: 'open' | 'resolved' | 'dismissed';
+    cameraId?: string;
+    camera?: {
+        id: string;
+        name: string;
+        type: string;
+        location: string;
+        status: string;
+    };
+    userId: string;
+    user?: {
+        id: string;
+        name: string;
+        email: string;
+    };
+    resolvedAt?: string;
+    resolvedBy?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface SystemStatus {
+    uptime: number;
+    active_users: number;
+    cameras?: {
+        [key: string]: {
+            status: string;
+            fps: number;
+            faces_detected: number;
+            last_alert?: string;
+        };
+    };
+    alerts?: {
+        total: number;
+        open: number;
+        resolved: number;
+        by_severity: {
+            low: number;
+            medium: number;
+            high: number;
+        };
+    };
+    recognition?: {
+        matcher: {
+            accuracy: number;
+            latency: number;
+            throughput: number;
+        };
+        registration: {
+            total: number;
+            pending: number;
+            failed: number;
+        };
+    };
+    notifications?: {
+        [channel: string]: {
+            status: string;
+            sent: number;
+            failed: number;
+            queue: number;
+        };
+    };
+    performance?: {
+        cpu_usage: number;
+        memory_usage: number;
+        disk_usage: number;
+        network_io: {
+            rx_bytes: number;
+            tx_bytes: number;
+        };
+    };
 }
 
 export interface AppSettings {

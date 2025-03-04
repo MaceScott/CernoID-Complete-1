@@ -1,69 +1,84 @@
-import React from 'react';
+import * as React from "react";
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-interface DataTableProps<T extends object> {
-  data: T[];
-  columns: {
-    key: keyof T | string;
-    title: string;
-    render?: (item: T) => React.ReactNode;
-  }[];
-  searchable?: boolean;
-  onRowClick?: (item: T) => void;
+interface DataTableProps<TData, TValue> {
+  columns: ColumnDef<TData, TValue>[];
+  data: TData[];
 }
 
-function DataTable<T extends object>({ data, columns, searchable, onRowClick }: DataTableProps<T>) {
-  const [searchTerm, setSearchTerm] = React.useState('');
-
-  const filteredData = searchable
-    ? data.filter(item =>
-        columns.some(column => {
-          if (typeof column.key !== 'string' && column.key in item) {
-            return String(item[column.key as keyof T]).toLowerCase().includes(searchTerm.toLowerCase());
-          }
-          return false;
-        })
-      )
-    : data;
+export function DataTable<TData, TValue>({
+  columns,
+  data,
+}: DataTableProps<TData, TValue>) {
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   return (
-    <div>
-      {searchable && (
-        <input
-          type="text"
-          placeholder="Search..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="mb-4 p-2 border rounded"
-        />
-      )}
-      <table className="min-w-full bg-white">
-        <thead>
-          <tr>
-            {columns.map(column => (
-              <th key={String(column.key)} className="py-2 px-4 border-b">
-                {column.title}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {filteredData.map((item, index) => (
-            <tr
-              key={index}
-              onClick={() => onRowClick && onRowClick(item)}
-              className="cursor-pointer hover:bg-gray-100"
-            >
-              {columns.map(column => (
-                <td key={String(column.key)} className="py-2 px-4 border-b">
-                  {column.render ? column.render(item) : (typeof column.key !== 'string' ? String(item[column.key]) : '')}
-                </td>
-              ))}
-            </tr>
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => {
+                return (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
+                );
+              })}
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && "selected"}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(
+                      cell.column.columnDef.cell,
+                      cell.getContext()
+                    )}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell
+                colSpan={columns.length}
+                className="h-24 text-center"
+              >
+                No results.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
-}
-
-export default DataTable; 
+} 

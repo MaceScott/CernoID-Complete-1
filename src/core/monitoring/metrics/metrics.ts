@@ -1,4 +1,4 @@
-import { register, Counter, Histogram } from 'prom-client'
+import { register, Counter, Histogram, Gauge } from 'prom-client'
 
 // Request counter
 export const httpRequestsTotal = new Counter({

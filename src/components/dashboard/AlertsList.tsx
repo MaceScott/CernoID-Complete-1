@@ -26,18 +26,12 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export function AlertsList() {
+export default function AlertsList() {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [typeFilter, setTypeFilter] = useState<string>("all")
   
-  const { data: alerts = [], error, isLoading } = useAlerts({
-    enabled: true,
-    refetchInterval: 10000, // Refetch every 10 seconds
-    onError: (error) => {
-      console.error("Failed to fetch alerts:", error)
-    }
-  })
+  const { alerts, loading: isLoading, error, acknowledgeAlert, resolveAlert } = useAlerts()
 
   // Filter alerts based on selected filters
   const filteredAlerts = alerts.filter(alert => {

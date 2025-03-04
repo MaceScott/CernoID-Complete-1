@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
@@ -13,7 +13,7 @@ export const useKeyboardNavigation = () => {
     const navigate = useNavigate();
     const { user } = useApp();
 
-    const shortcuts: ShortcutMap[] = [
+    const shortcuts = useMemo(() => [
         {
             key: 'h',
             ctrlKey: true,
@@ -43,7 +43,7 @@ export const useKeyboardNavigation = () => {
             action: () => document.querySelector<HTMLInputElement>('[role="search"]')?.focus(),
             description: 'Focus Search'
         }
-    ];
+    ], [navigate, user?.role]);
 
     const handleKeyPress = useCallback((event: KeyboardEvent) => {
         const shortcut = shortcuts.find(s => 

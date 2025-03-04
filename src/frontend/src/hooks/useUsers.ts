@@ -1,108 +1,147 @@
-import { useState, useCallback } from 'react';
-import { api } from '../services/api';
-import { User, PaginatedResponse } from '../types';
+import { useState, useEffect } from 'react';
 
-interface UserFilters {
-    role?: string;
-    isActive?: boolean;
-    search?: string;
+interface User {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    status: 'active' | 'inactive' | 'suspended';
+    lastLogin?: string;
+    createdAt: string;
+    updatedAt: string;
 }
 
-export const useUsers = () => {
+interface UserFormData {
+    username: string;
+    email: string;
+    role: string;
+    password?: string;
+}
+
+interface UseUsersReturn {
+    users: User[];
+    loading: boolean;
+    error: string | null;
+    createUser: (userData: UserFormData) => Promise<void>;
+    updateUser: (id: string, userData: Partial<UserFormData>) => Promise<void>;
+    deleteUser: (id: string) => Promise<void>;
+    getUser: (id: string) => Promise<User>;
+}
+
+export const useUsers = (): UseUsersReturn => {
     const [users, setUsers] = useState<User[]>([]);
-    const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchUsers = useCallback(async (
-        page: number = 1,
-        limit: number = 10,
-        filters?: UserFilters
-    ) => {
-        setLoading(true);
-        setError(null);
-
+    const fetchUsers = async () => {
         try {
-            const response = await api.get<PaginatedResponse<User>>('/users', {
-                params: {
-                    page,
-                    limit,
-                    ...filters
-                }
+            setLoading(true);
+            const response = await fetch('/api/users');
+            if (!response.ok) {
+                throw new Error('Failed to fetch users');
+            }
+            const data = await response.json();
+            setUsers(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const createUser = async (userData: UserFormData) => {
+        try {
+            setLoading(true);
+            const response = await fetch('/api/users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(userData),
             });
-
-            setUsers(response.data.items);
-            setTotal(response.data.total);
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to fetch users');
+            if (!response.ok) {
+                throw new Error('Failed to create user');
+            }
+            const newUser = await response.json();
+            setUsers(prev => [...prev, newUser]);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
             throw err;
         } finally {
             setLoading(false);
         }
-    }, []);
+    };
 
-    const createUser = useCallback(async (userData: Partial<User>) => {
-        setLoading(true);
-        setError(null);
-
+    const updateUser = async (id: string, userData: Partial<UserFormData>) => {
         try {
-            const response = await api.post<User>('/users', userData);
-            setUsers(prev => [...prev, response.data]);
-            return response.data;
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to create user');
+            setLoading(true);
+            const response = await fetch(`/api/users/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(userData),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to update user');
+            }
+            const updatedUser = await response.json();
+            setUsers(prev => prev.map(user => 
+                user.id === id ? updatedUser : user
+            ));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
             throw err;
         } finally {
             setLoading(false);
         }
-    }, []);
+    };
 
-    const updateUser = useCallback(async (
-        userId: number,
-        updates: Partial<User>
-    ) => {
-        setLoading(true);
-        setError(null);
-
+    const deleteUser = async (id: string) => {
         try {
-            const response = await api.put<User>(`/users/${userId}`, updates);
-            setUsers(prev => 
-                prev.map(user => 
-                    user.id === userId ? response.data : user
-                )
-            );
-            return response.data;
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to update user');
+            setLoading(true);
+            const response = await fetch(`/api/users/${id}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) {
+                throw new Error('Failed to delete user');
+            }
+            setUsers(prev => prev.filter(user => user.id !== id));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
             throw err;
         } finally {
             setLoading(false);
         }
-    }, []);
+    };
 
-    const deleteUser = useCallback(async (userId: number) => {
-        setLoading(true);
-        setError(null);
-
+    const getUser = async (id: string): Promise<User> => {
         try {
-            await api.delete(`/users/${userId}`);
-            setUsers(prev => prev.filter(user => user.id !== userId));
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to delete user');
+            setLoading(true);
+            const response = await fetch(`/api/users/${id}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch user');
+            }
+            return await response.json();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
             throw err;
         } finally {
             setLoading(false);
         }
+    };
+
+    useEffect(() => {
+        fetchUsers();
     }, []);
 
     return {
         users,
-        total,
         loading,
         error,
-        fetchUsers,
         createUser,
         updateUser,
-        deleteUser
+        deleteUser,
+        getUser
     };
 }; 

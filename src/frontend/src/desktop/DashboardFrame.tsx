@@ -16,7 +16,7 @@ import {
   Videocam as VideocamIcon
 } from '@mui/icons-material';
 import { BaseFrame } from './BaseFrame';
-import { useAuth } from '../hooks/useAuth';
+import { useApp } from '../context/AppContext';
 
 interface SystemStats {
   totalFaces: number;
@@ -28,7 +28,7 @@ interface SystemStats {
 
 export const DashboardFrame: React.FC = () => {
   const theme = useTheme();
-  const { user } = useAuth();
+  const { state: { user } } = useApp();
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +85,7 @@ export const DashboardFrame: React.FC = () => {
     <BaseFrame title="Dashboard">
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between' }}>
         <Typography variant="h4" component="h1">
-          Welcome, {user?.firstName || user?.username}
+          Welcome, {user?.name || user?.email}
         </Typography>
         <Box>
           <Tooltip title="Refresh Statistics">

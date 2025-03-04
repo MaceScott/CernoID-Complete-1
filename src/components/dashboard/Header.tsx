@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import {
   AppBar,
@@ -18,15 +20,17 @@ import {
   Person,
   ExitToApp
 } from '@mui/icons-material';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
 interface HeaderProps {
-  onToggleSidebar?: () => void;
+  onToggleSidebar: () => void;
 }
 
-export default function DashboardHeader({ onToggleSidebar }: HeaderProps) {
+export default function Header({ onToggleSidebar }: HeaderProps) {
   const theme = useTheme();
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [notificationAnchor, setNotificationAnchor] = useState<null | HTMLElement>(null);
 
@@ -41,6 +45,12 @@ export default function DashboardHeader({ onToggleSidebar }: HeaderProps) {
   const handleClose = () => {
     setAnchorEl(null);
     setNotificationAnchor(null);
+  };
+
+  const handleLogout = async () => {
+    handleClose();
+    // TODO: Implement logout
+    router.push('/login');
   };
 
   return (
@@ -70,9 +80,10 @@ export default function DashboardHeader({ onToggleSidebar }: HeaderProps) {
           <IconButton color="inherit" onClick={handleMenu}>
             <Avatar
               alt={user?.name || 'User'}
-              src={user?.avatar}
               sx={{ width: 32, height: 32 }}
-            />
+            >
+              {user?.name?.[0] || 'U'}
+            </Avatar>
           </IconButton>
         </Box>
 
@@ -97,7 +108,7 @@ export default function DashboardHeader({ onToggleSidebar }: HeaderProps) {
           <MenuItem onClick={handleClose}>
             <Settings sx={{ mr: 1 }} /> Settings
           </MenuItem>
-          <MenuItem onClick={logout}>
+          <MenuItem onClick={handleLogout}>
             <ExitToApp sx={{ mr: 1 }} /> Logout
           </MenuItem>
         </Menu>

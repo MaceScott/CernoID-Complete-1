@@ -12,7 +12,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 
 export const LoginFrame: React.FC = () => {
-  const { login, loading, error } = useAuth();
+  const { login, isLoading, error } = useAuth();
   const { navigate } = useNavigation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -62,7 +62,7 @@ export const LoginFrame: React.FC = () => {
               onChange={(e) => setUsername(e.target.value)}
               fullWidth
               required
-              disabled={loading}
+              disabled={isLoading}
             />
 
             <TextField
@@ -72,7 +72,7 @@ export const LoginFrame: React.FC = () => {
               onChange={(e) => setPassword(e.target.value)}
               fullWidth
               required
-              disabled={loading}
+              disabled={isLoading}
             />
 
             <Button
@@ -80,9 +80,9 @@ export const LoginFrame: React.FC = () => {
               variant="contained"
               size="large"
               fullWidth
-              disabled={loading}
+              disabled={isLoading}
             >
-              {loading ? <CircularProgress size={24} /> : 'Login'}
+              {isLoading ? <CircularProgress size={24} /> : 'Login'}
             </Button>
           </Box>
         </form>
