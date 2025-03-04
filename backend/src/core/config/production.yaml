@@ -1,0 +1,20 @@
+extends: default.yaml
+
+database:
+  pool_size: 50
+  ssl_mode: require
+
+logging:
+  level: WARNING
+  handlers:
+    sentry:
+      enabled: true
+
+security:
+  cors:
+    allowed_origins: ["https://cernoid.com"]
+  rate_limiting:
+    rate: 50
+
+api:
+  debug: false 

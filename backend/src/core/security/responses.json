@@ -1,0 +1,5 @@
+{
+  "recognized": "recognized.mp3",
+  "unrecognized": "unrecognized.mp3",
+  "suspiciousActivity": "suspiciousActivity.mp3"
+} 

@@ -3,60 +3,118 @@ version: '3.8'
 services:
   frontend:
     build:
-      context: .
-      target: frontend
+      context: frontend
+      dockerfile: Dockerfile
     volumes:
-      - ./src:/app/src
-      - ./public:/app/public
-      - ./node_modules:/app/node_modules
+      - frontend_data:/app/.next
+      - ./frontend/public:/app/public
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_TELEMETRY_DISABLED=1
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cernoid_network
 
   backend:
     build:
-      context: .
-      target: backend
+      context: backend
+      dockerfile: Dockerfile
     volumes:
-      - ./src:/app/src
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ./backend/src:/app/src
+      - backend_data:/app/data
+      - backend_logs:/app/logs
+      - ./backend/models:/app/models
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
       - REDIS_URL=redis://redis:6379/0
       - PORT=8000
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      - OPENCV_VIDEOIO_PRIORITY_MSMF=0
+      - LOG_LEVEL=info
+      - ENVIRONMENT=development
+    working_dir: /app
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cernoid_network
 
   db:
-    image: postgres:15
+    image: postgres:15-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=cernoid
     ports:
       - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - cernoid_network
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
     volumes:
       - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
     ports:
       - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - cernoid_network
 
 volumes:
   postgres_data:
+    name: cernoid_postgres_data
   redis_data:
+    name: cernoid_redis_data
+  frontend_data:
+    name: cernoid_frontend_data
+  backend_data:
+    name: cernoid_backend_data
+  backend_logs:
+    name: cernoid_backend_logs
 
 networks:
-  default:
-    name: cernoid_network 
+  cernoid_network:
+    name: cernoid_network
+    driver: bridge 

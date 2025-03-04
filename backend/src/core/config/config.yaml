@@ -1,0 +1,13 @@
+BASE_DIR: "C:/Users/maces/CernoID-Complete"
+SHAPE_PREDICTOR_PATH: "external_models/shape_predictor_68_face_landmarks.dat"
+FACE_RECOGNIZER_PATH: "external_models/dlib_face_recognition_resnet_model_v1.dat"
+
+DATABASE_CONFIG:
+  host: "localhost"
+  database: "cernoID"
+  user: "cernouser"
+  password: "JolieAthena#02"  # Use environment variables for passwords
+
+LOGS_PATH: "logs/app.log"
+
+IMAGE_FOLDER: "test_images"  # Path to image directory
