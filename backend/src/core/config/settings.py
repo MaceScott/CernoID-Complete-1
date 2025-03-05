@@ -6,14 +6,15 @@ from pydantic import BaseSettings, validator, HttpUrl, SecretStr
 import json
 import os
 import logging
+from enum import Enum
+from core.logging import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-class Environment(str):
+class Environment(str, Enum):
     DEVELOPMENT = "development"
-    STAGING = "staging"
     PRODUCTION = "production"
+    TESTING = "testing"
 
 class Settings(BaseSettings):
     """Enhanced settings with validation"""

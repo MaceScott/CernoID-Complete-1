@@ -4,13 +4,18 @@ import inspect
 from datetime import datetime
 from ..base import BaseComponent
 from ..utils.errors import handle_errors
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 class EventManager(BaseComponent):
-    """Advanced event management system"""
+    """Manages system events and their handlers."""
     
-    def __init__(self, config: dict):
+    def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self._handlers: Dict[str, Set[Callable]] = {}
+        self._handlers: Dict[str, List[Callable]] = {}
+        self._event_queue = asyncio.Queue()
+        self._processing = False
         self._wildcards: Set[Callable] = set()
         self._middleware: List[Callable] = []
         self._max_listeners = self.config.get('events.max_listeners', 100)
@@ -24,17 +29,57 @@ class EventManager(BaseComponent):
         }
 
     async def initialize(self) -> None:
-        """Initialize event manager"""
-        # Initialize event queue if async dispatch enabled
-        if self._async_dispatch:
-            self._queue = asyncio.Queue(maxsize=self._queue_size)
-            asyncio.create_task(self._dispatch_task())
-
+        """Initialize the event manager."""
+        self._processing = True
+        asyncio.create_task(self._process_events())
+        
     async def cleanup(self) -> None:
-        """Cleanup event resources"""
+        """Clean up event manager resources."""
+        self._processing = False
+        await self._event_queue.put(None)  # Signal to stop processing
         self._handlers.clear()
         self._wildcards.clear()
         self._middleware.clear()
+
+    def subscribe(self, event_type: str, handler: Callable) -> None:
+        """Subscribe to an event type."""
+        if event_type not in self._handlers:
+            self._handlers[event_type] = []
+        self._handlers[event_type].append(handler)
+        
+    def unsubscribe(self, event_type: str, handler: Callable) -> None:
+        """Unsubscribe from an event type."""
+        if event_type in self._handlers:
+            self._handlers[event_type].remove(handler)
+            
+    async def emit(self, event_type: str, data: Any = None) -> None:
+        """Emit an event."""
+        event = {
+            'type': event_type,
+            'data': data,
+            'timestamp': datetime.utcnow()
+        }
+        await self._event_queue.put(event)
+        
+    async def _process_events(self) -> None:
+        """Process events from the queue."""
+        while self._processing:
+            event = await self._event_queue.get()
+            if event is None:  # Stop signal
+                break
+                
+            event_type = event['type']
+            if event_type in self._handlers:
+                for handler in self._handlers[event_type]:
+                    try:
+                        if asyncio.iscoroutinefunction(handler):
+                            await handler(event)
+                        else:
+                            handler(event)
+                    except Exception as e:
+                        logger.error(f"Error processing event {event_type}: {e}")
+                        
+            self._event_queue.task_done()
 
     @handle_errors(logger=None)
     def on(self,
@@ -58,10 +103,10 @@ class EventManager(BaseComponent):
             
         # Initialize handler set if needed
         if event not in self._handlers:
-            self._handlers[event] = set()
+            self._handlers[event] = []
             
         # Add handler
-        self._handlers[event].add(handler)
+        self._handlers[event].append(handler)
 
     def off(self,
             event: str,
@@ -78,7 +123,7 @@ class EventManager(BaseComponent):
             return
             
         if handler:
-            self._handlers[event].discard(handler)
+            self._handlers[event].remove(handler)
             if not self._handlers[event]:
                 del self._handlers[event]
         else:
@@ -91,14 +136,13 @@ class EventManager(BaseComponent):
         self._middleware.append(middleware)
 
     @handle_errors(logger=None)
-    async def emit(self,
-                  event: str,
-                  data: Optional[Any] = None,
+    async def emit_event(self,
+                  event: Dict,
                   wait: bool = False) -> None:
         """Emit event"""
         try:
             # Create event object
-            evt = Event(event, data)
+            evt = Event(event['type'], event['data'])
             
             # Apply middleware
             for middleware in self._middleware:
@@ -112,7 +156,7 @@ class EventManager(BaseComponent):
                     
             # Handle async dispatch
             if self._async_dispatch and not wait:
-                await self._queue.put(evt)
+                await self._event_queue.put(evt)
                 self._stats['emitted'] += 1
                 return
                 
@@ -131,11 +175,7 @@ class EventManager(BaseComponent):
                        wait: bool = False) -> None:
         """Emit multiple events"""
         for event_data in events:
-            await self.emit(
-                event_data['event'],
-                event_data.get('data'),
-                wait
-            )
+            await self.emit_event(event_data, wait)
 
     def once(self,
              event: str,
@@ -158,10 +198,10 @@ class EventManager(BaseComponent):
         """Dispatch event to handlers"""
         try:
             # Get handlers for event
-            handlers = self._handlers.get(event.name, set())
+            handlers = self._handlers.get(event.name, [])
             
             # Add wildcard handlers
-            handlers.update(self._wildcards)
+            handlers.extend(self._wildcards)
             
             if not handlers:
                 return
@@ -190,25 +230,8 @@ class EventManager(BaseComponent):
             if self._propagate_errors:
                 raise
 
-    async def _dispatch_task(self) -> None:
-        """Async event dispatch task"""
-        while True:
-            try:
-                # Get event from queue
-                event = await self._queue.get()
-                
-                # Dispatch event
-                await self._dispatch_event(event)
-                
-                # Mark task as done
-                self._queue.task_done()
-                
-            except Exception as e:
-                self.logger.error(
-                    f"Event dispatch task error: {str(e)}"
-                )
-                self._stats['errors'] += 1
-
+# Global event manager instance
+event_manager = EventManager({})
 
 class Event:
     """Event object"""

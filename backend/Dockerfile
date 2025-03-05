@@ -1,49 +1,51 @@
-# Use Python slim image
-FROM python:3.11-slim
-WORKDIR /app
+# Use Python 3.10 slim image for better dlib compatibility
+FROM python:3.10-slim
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
     build-essential \
-    python3-dev \
-    libpq-dev \
     cmake \
+    git \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
     libgl1-mesa-glx \
     libglib2.0-0 \
-    curl \
+    libpq-dev \
+    postgresql-client \
+    redis-tools \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python packages
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY src ./src
-COPY models ./models
-COPY config ./config
-COPY .env* ./
+COPY src/ ./src/
+COPY models/ ./models/
+COPY config/ ./config/
+COPY migrations/ ./migrations/
+COPY alembic.ini .
+COPY docker-entrypoint.sh .
 
-# Create directories for data and logs
-RUN mkdir -p /app/data /app/logs && \
-    useradd -m cernoid && \
-    chown -R cernoid:cernoid /app
+# Create necessary directories
+RUN mkdir -p /app/data /app/logs
 
-USER cernoid
+# Set permissions
+RUN chmod +x docker-entrypoint.sh
 
-# Environment variables
-ENV PYTHONPATH=/app \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    OPENCV_VIDEOIO_PRIORITY_MSMF=0
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
+# Expose port
 EXPOSE 8000
 
-# Create entrypoint script
-COPY --chown=cernoid:cernoid docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
-
-ENTRYPOINT ["/app/docker-entrypoint.sh"] 
+# Set entrypoint
+ENTRYPOINT ["./docker-entrypoint.sh"] 

@@ -21,10 +21,10 @@ import GPUtil
 from functools import lru_cache
 from cachetools import TTLCache
 
-from core.events.manager import EventManager
+from core.events.manager import event_manager
 from core.error_handling import handle_exceptions
-from core.config.manager import ConfigManager
-from core.database import DatabasePool
+from core.config import config
+from core.database import db_pool
 from core.utils.decorators import measure_performance
 from core.monitoring.service import monitoring_service
 from gtts import gTTS
@@ -67,13 +67,13 @@ class FaceRecognitionSystem:
     """Unified face recognition system with GPU support"""
     
     def __init__(self):
-        self.config = ConfigManager()
-        self.event_manager = EventManager()
-        self.db_pool = DatabasePool()
+        self.config = config
+        self.event_manager = event_manager
+        self.db_pool = db_pool
         
         # GPU configuration
         self.device = torch.device('cuda' if torch.cuda.is_available() and 
-                                 self.config.get('gpu_enabled', True) else 'cpu')
+                                 self.config.get('GPU_ENABLED', True) else 'cpu')
         logger.info(f"Using device: {self.device}")
         
         # Initialize components
@@ -92,24 +92,24 @@ class FaceRecognitionSystem:
             
         # Enhanced caching with TTL
         self._encoding_cache = TTLCache(
-            maxsize=self.config.get('face_recognition.cache_size', 10000),
-            ttl=self.config.get('face_recognition.cache_ttl', 3600)
+            maxsize=self.config.get('FACE_RECOGNITION_CACHE_SIZE', 10000),
+            ttl=self.config.get('FACE_RECOGNITION_CACHE_TTL', 3600)
         )
         
         # Optimize processing settings
-        self._face_size = self.config.get('recognition.face_size', 160)  # Reduced from 224
-        self._min_quality = self.config.get('recognition.min_quality', 0.5)  # Relaxed threshold
+        self._face_size = self.config.get('RECOGNITION_FACE_SIZE', 160)  # Reduced from 224
+        self._min_quality = self.config.get('RECOGNITION_MIN_QUALITY', 0.5)  # Relaxed threshold
         
         # Use mixed precision training
         self.scaler = torch.cuda.amp.GradScaler()
         self.use_amp = torch.cuda.is_available()
         
         # Cache settings
-        self.matching_threshold = self.config.get('face_recognition.matching_threshold', 0.6)
+        self.matching_threshold = self.config.get('FACE_RECOGNITION_MATCHING_THRESHOLD', 0.6)
         
         # Performance settings
-        self._min_face_size = self.config.get('face_recognition.min_face_size', (30, 30))
-        self._scale_factor = self.config.get('face_recognition.scale_factor', 1.1)
+        self._min_face_size = self.config.get('FACE_RECOGNITION_MIN_FACE_SIZE', (30, 30))
+        self._scale_factor = self.config.get('FACE_RECOGNITION_SCALE_FACTOR', 1.1)
         
         # Feature extraction settings
         self._normalize = transforms.Normalize(
@@ -139,23 +139,23 @@ class FaceRecognitionSystem:
         }
         
         # Distance detection settings
-        self._focal_length = self.config.get('recognition.focal_length', 615.0)  # Focal length in pixels
-        self._avg_face_width = self.config.get('recognition.avg_face_width', 0.15)  # Average face width in meters
-        self._activation_range = self.config.get('recognition.activation_range', 1.5)  # Meters
-        self._long_range_threshold = self.config.get('recognition.long_range_threshold', 6.0)  # Meters
+        self._focal_length = self.config.get('RECOGNITION_FOCAL_LENGTH', 615.0)  # Focal length in pixels
+        self._avg_face_width = self.config.get('RECOGNITION_AVG_FACE_WIDTH', 0.15)  # Average face width in meters
+        self._activation_range = self.config.get('RECOGNITION_ACTIVATION_RANGE', 1.5)  # Meters
+        self._long_range_threshold = self.config.get('RECOGNITION_LONG_RANGE_THRESHOLD', 6.0)  # Meters
 
     def _init_detector(self) -> Union[cv2.CascadeClassifier, torch.nn.Module]:
         """Initialize face detector"""
         try:
             if self.device.type == 'cuda':
                 # Use TorchScript model for GPU
-                model_path = self.config.get('face_detection.torch_model_path')
+                model_path = self.config.get('FACE_DETECTION_TORCH_MODEL_PATH')
                 model = torch.jit.load(model_path, map_location=self.device)
                 model.eval()
                 return model
             else:
                 # Use OpenCV for CPU
-                cascade_path = self.config.get('face_detection.cascade_path')
+                cascade_path = self.config.get('FACE_DETECTION_CASCADE_PATH')
                 detector = cv2.CascadeClassifier(cascade_path)
                 if detector.empty():
                     raise ValueError(f"Failed to load cascade classifier from {cascade_path}")
@@ -169,14 +169,14 @@ class FaceRecognitionSystem:
         try:
             if self.device.type == 'cuda':
                 # Use PyTorch model for GPU
-                model_path = self.config.get('face_encoding.torch_model_path')
+                model_path = self.config.get('FACE_ENCODING_TORCH_MODEL_PATH')
                 model = torch.jit.load(model_path, map_location=self.device)
                 model.eval()
                 return model
             else:
                 # Use dlib for CPU
                 import dlib
-                model_path = self.config.get('face_encoding.dlib_model_path')
+                model_path = self.config.get('FACE_ENCODING_DLIB_MODEL_PATH')
                 return dlib.face_recognition_model_v1(model_path)
         except Exception as e:
             logger.error(f"Error initializing face encoder: {e}")
@@ -185,7 +185,7 @@ class FaceRecognitionSystem:
     def _init_landmark_detector(self) -> torch.nn.Module:
         """Initialize facial landmark detection model"""
         try:
-            model_path = self.config.get('recognition.landmark_model')
+            model_path = self.config.get('RECOGNITION_LANDMARK_MODEL')
             if not model_path:
                 raise ValueError("Landmark model path not configured")
                 
@@ -202,7 +202,7 @@ class FaceRecognitionSystem:
     def _init_attribute_analyzer(self) -> torch.nn.Module:
         """Initialize facial attribute analysis model"""
         try:
-            model_path = self.config.get('recognition.attribute_model')
+            model_path = self.config.get('RECOGNITION_ATTRIBUTE_MODEL')
             if not model_path:
                 raise ValueError("Attribute model path not configured")
                 
@@ -239,7 +239,7 @@ class FaceRecognitionSystem:
                 image = self._decode_image(image_data)
             else:
                 image = image_data
-            
+                
             # Detect faces
             faces = await self.detect_faces(image)
             
@@ -248,28 +248,19 @@ class FaceRecognitionSystem:
                 features = await self.process_face(face.face_image)
                 if features:
                     face.features = features
-            
-            # Calculate processing time
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
-            
-            # Update metrics
-            await self.monitoring.collect_metrics()
+                    
+            # Update statistics
+            self._stats['total_processed'] += 1
+            self._stats['faces_processed'] += len(faces)
+            self._stats['processing_time'] = (datetime.utcnow() - start_time).total_seconds()
             
             return {
-                "faces": [
-                    {
-                        "bbox": face.bbox,
-                        "confidence": face.confidence,
-                        "landmarks": face.landmarks,
-                        "features": face.features.__dict__ if face.features else None
-                    }
-                    for face in faces
-                ],
-                "processing_time": processing_time
+                'faces': faces,
+                'processing_time': self._stats['processing_time']
             }
             
         except Exception as e:
-            logger.error(f"Image processing failed: {str(e)}")
+            logger.error(f"Error processing image: {e}")
             raise
 
     async def process_face(self, face_img: np.ndarray) -> Optional[FaceFeatures]:
@@ -818,5 +809,5 @@ def play_response(event):
         tts.save('response.mp3')
         os.system('mpg123 response.mp3')
 
-# Global recognition system instance
-recognition_system = FaceRecognitionSystem() 
+# Global face recognition system instance
+face_recognition_system = FaceRecognitionSystem() 

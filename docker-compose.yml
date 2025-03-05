@@ -19,7 +19,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:3000"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -32,13 +32,17 @@ services:
       context: backend
       dockerfile: Dockerfile
     volumes:
-      - ./backend/src:/app/src
       - backend_data:/app/data
       - backend_logs:/app/logs
-      - ./backend/models:/app/models
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
-      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=cernoid
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - PORT=8000
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
@@ -57,9 +61,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
     networks:
       - cernoid_network
 
