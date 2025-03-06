@@ -1,99 +1,66 @@
-from typing import Any, Dict, Optional
-import os
-from dotenv import load_dotenv
-from core.logging import get_logger
+"""Application configuration."""
+from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, validator
 
-logger = get_logger(__name__)
-
-class ConfigManager:
-    """Manages application configuration with environment variable support."""
+class Settings(BaseSettings):
+    """Application settings."""
     
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self._load_env_vars()
-        
-    def _load_env_vars(self) -> None:
-        """Load environment variables from .env file."""
-        try:
-            load_dotenv()
-        except Exception as e:
-            logger.warning(f"Failed to load .env file: {e}")
-            
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get configuration value with environment variable fallback."""
-        # First try environment variable
-        env_value = os.getenv(key)
-        if env_value is not None:
-            return env_value
-            
-        # Then try config dictionary
-        return self.config.get(key, default)
-        
-    def get_int(self, key: str, default: int = 0) -> int:
-        """Get integer configuration value."""
-        value = self.get(key, default)
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return default
-            
-    def get_bool(self, key: str, default: bool = False) -> bool:
-        """Get boolean configuration value."""
-        value = self.get(key, default)
-        if isinstance(value, bool):
-            return value
-        return str(value).lower() in ('true', '1', 'yes')
-        
-    def get_list(self, key: str, default: Optional[list] = None) -> list:
-        """Get list configuration value."""
-        value = self.get(key, default)
-        if value is None:
-            return default or []
-        if isinstance(value, list):
-            return value
-        return [item.strip() for item in str(value).split(',')]
-        
-    def set(self, key: str, value: Any) -> None:
-        """Set configuration value."""
-        self.config[key] = value
-        
-    def update(self, config: Dict[str, Any]) -> None:
-        """Update configuration with new values."""
-        self.config.update(config)
-        
-    def to_dict(self) -> Dict[str, Any]:
-        """Get configuration as dictionary."""
-        return self.config.copy()
+    # Application
+    environment: str = Field(default="development")
+    debug: bool = Field(default=True)
+    log_level: str = Field(default="INFO")
+    
+    # Database
+    db_host: str = Field(default="db")
+    db_port: int = Field(default=5432)
+    db_user: str = Field(default="postgres")
+    db_password: str = Field(default="postgres")
+    db_name: str = Field(default="cernoid")
+    database_url: str = Field(default="postgresql+asyncpg://postgres:postgres@db:5432/cernoid")
+    
+    # Database Pool
+    db_pool_size: int = Field(default=5)
+    db_max_overflow: int = Field(default=10)
+    db_pool_timeout: int = Field(default=30)
+    sql_debug: bool = Field(default=False)
+    
+    # Redis
+    redis_host: str = Field(default="redis")
+    redis_port: int = Field(default=6379)
+    
+    # Security
+    secret_key: str = Field(default="your-secret-key-here")
+    algorithm: str = Field(default="HS256")
+    access_token_expire_minutes: int = Field(default=30)
+    
+    # CORS
+    allowed_origins: List[str] = Field(default=["*"])
+    
+    # Face Recognition
+    face_recognition_model: str = Field(default="hog")
+    min_face_confidence: float = Field(default=0.6)
+    face_encoding_batch_size: int = Field(default=32)
+    
+    @validator("database_url", pre=True)
+    def validate_database_url(cls, v: str, values: dict) -> str:
+        """Validate and construct database URL if not provided."""
+        if not v:
+            return (
+                f"postgresql+asyncpg://{values['db_user']}:{values['db_password']}"
+                f"@{values['db_host']}:{values['db_port']}/{values['db_name']}"
+            )
+        return v
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
 
-# Default configuration
-default_config = {
-    'APP_NAME': 'CernoID',
-    'APP_ENV': 'development',
-    'DEBUG': True,
-    'API_VERSION': '1.0.0',
-    'HOST': '0.0.0.0',
-    'PORT': 8000,
-    'WORKERS': 4,
-    'LOG_LEVEL': 'INFO',
-    'DATABASE_URL': 'postgresql://postgres:postgres@db:5432/cernoid',
-    'REDIS_URL': 'redis://redis:6379/0',
-    'JWT_SECRET': 'your-secret-key',
-    'JWT_ALGORITHM': 'HS256',
-    'ACCESS_TOKEN_EXPIRE_MINUTES': 30,
-    'FACE_RECOGNITION_MODEL': 'models/face_recognition_model.pkl',
-    'GPU_ENABLED': False,
-    'MAX_WORKERS': 4,
-    'BATCH_SIZE': 32,
-    'CACHE_TTL': 3600,
-    'ALLOWED_ORIGINS': ['*'],
-    'CORS_ENABLED': True,
-    'RATE_LIMIT_ENABLED': True,
-    'RATE_LIMIT_REQUESTS': 100,
-    'RATE_LIMIT_PERIOD': 60,
-    'HEALTH_CHECK_INTERVAL': 30,
-    'HEALTH_CHECK_TIMEOUT': 5,
-    'HEALTH_CHECK_RETRIES': 3
-}
+# Create global settings instance
+settings = Settings()
 
-# Global configuration instance
-config = ConfigManager(default_config) 
+def get_settings() -> Settings:
+    """Get application settings."""
+    return settings 

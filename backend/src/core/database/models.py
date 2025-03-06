@@ -1,49 +1,42 @@
-"""Database models."""
+"""SQLAlchemy models base configuration."""
 from datetime import datetime
-from typing import Optional, List
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean, JSON
-from sqlalchemy.orm import relationship
-from .models.base import BaseModel
+from typing import Any
+from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.ext.declarative import declared_attr
 
-class User(BaseModel):
-    """User model for authentication and authorization."""
-    __tablename__ = 'users'
+# Naming convention for constraints
+convention = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
+
+# Create metadata with naming convention
+metadata = MetaData(naming_convention=convention)
+
+class Base(DeclarativeBase):
+    """Base class for all models."""
     
-    username = Column(String(50), unique=True, nullable=False)
-    email = Column(String(120), unique=True, nullable=False)
-    hashed_password = Column(String(128), nullable=False)
-    role = Column(String(20), nullable=False, default='user')
-    is_active = Column(Boolean, default=True)
-    last_login = Column(DateTime)
-    face_encodings = relationship("FaceEncoding", back_populates="user")
-    last_seen = Column(DateTime)
-    metadata = Column(JSON)
-
-class FaceEncoding(BaseModel):
-    """Face encoding model for storing face recognition data."""
-    __tablename__ = 'face_encodings'
+    metadata = metadata
     
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    encoding_data = Column(JSON, nullable=False)
-    confidence_score = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    user = relationship("User", back_populates="face_encodings")
-
-class AccessLog(BaseModel):
-    """Access log model for tracking system access."""
-    __tablename__ = 'access_logs'
+    @declared_attr.directive
+    def __tablename__(cls) -> str:
+        """Generate table name from class name."""
+        return cls.__name__.lower()
     
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    access_time = Column(DateTime, default=datetime.utcnow)
-    access_type = Column(String(20), nullable=False)
-    ip_address = Column(String(45))
-    user_agent = Column(String(255))
-    status = Column(String(20), nullable=False)
-    details = Column(JSON)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
 
-# Additional models to be implemented:
-# - EventLog
-# - SystemSettings
-# - Camera
-# - Alert
-# - AccessControl 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            column.name: getattr(self, column.name)
+            for column in self.__table__.columns
+        } 

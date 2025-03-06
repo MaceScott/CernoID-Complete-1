@@ -1,5 +1,5 @@
 """Database models package."""
-from .base import Base, BaseModel, MigrationHistory
+from .base import Base, BaseModel, MigrationHistory, metadata
 from .models import User, FaceEncoding, AccessLog
 
 __all__ = [
@@ -8,5 +8,6 @@ __all__ = [
     'User',
     'FaceEncoding',
     'AccessLog',
-    'MigrationHistory'
+    'MigrationHistory',
+    'metadata'
 ] 

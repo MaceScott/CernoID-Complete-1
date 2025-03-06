@@ -1,37 +1,40 @@
+"""Logging configuration."""
 import logging
-import sys
+import logging.handlers
+import os
 from pathlib import Path
 from typing import Optional
-from core.config import config
 
-def setup_logging(log_file: Optional[str] = None) -> None:
-    """Set up logging configuration."""
-    log_level = getattr(logging, config.get('LOG_LEVEL', 'INFO').upper())
-    
-    # Create logs directory if it doesn't exist
+def setup_logging(
+    log_level: str = "INFO",
+    log_file: Optional[str] = None,
+    log_format: Optional[str] = None
+) -> None:
+    """Setup logging configuration."""
+    if log_format is None:
+        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+    # Configure root logger
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format=log_format
+    )
+
     if log_file:
+        # Create logs directory if it doesn't exist
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Configure logging
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            *([logging.FileHandler(log_file)] if log_file else [])
-        ]
-    )
-    
-    # Set specific log levels for third-party libraries
-    logging.getLogger('uvicorn').setLevel(logging.INFO)
-    logging.getLogger('uvicorn.access').setLevel(logging.INFO)
-    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
-    logging.getLogger('redis').setLevel(logging.WARNING)
-    
-def get_logger(name: str) -> logging.Logger:
-    """Get a logger instance with the specified name."""
-    return logging.getLogger(name)
 
-# Set up logging on module import
-setup_logging('logs/app.log') 
+        # Add file handler
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=10485760,  # 10MB
+            backupCount=5,
+            encoding="utf-8"
+        )
+        file_handler.setFormatter(logging.Formatter(log_format))
+        logging.getLogger().addHandler(file_handler)
+
+def get_logger(name: str) -> logging.Logger:
+    """Get logger instance."""
+    return logging.getLogger(name) 

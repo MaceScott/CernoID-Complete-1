@@ -29,13 +29,17 @@ services:
 
   backend:
     build:
-      context: backend
+      context: ./backend
       dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
     volumes:
-      - backend_data:/app/data
-      - backend_logs:/app/logs
+      - ./backend/src:/app/src
+      - ./backend/migrations:/app/migrations
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
+      - ENVIRONMENT=development
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=postgres
@@ -43,42 +47,30 @@ services:
       - DB_NAME=cernoid
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - PORT=8000
-      - PYTHONPATH=/app/src
-      - PYTHONUNBUFFERED=1
-      - OPENCV_VIDEOIO_PRIORITY_MSMF=0
-      - LOG_LEVEL=info
-      - ENVIRONMENT=development
-    working_dir: /app
-    ports:
-      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
-      timeout: 30s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - cernoid_network
 
   db:
     image: postgres:15-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=cernoid
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -90,13 +82,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-      - ./redis.conf:/usr/local/etc/redis/redis.conf
-    command: redis-server /usr/local/etc/redis/redis.conf
     ports:
       - "6379:6379"
-    restart: unless-stopped
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

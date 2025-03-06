@@ -1,9 +1,10 @@
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, DateTime, String
+from sqlalchemy import Column, Integer, DateTime, String, MetaData
 from datetime import datetime
 import logging
 
-Base = declarative_base()
+metadata = MetaData()
+Base = declarative_base(metadata=metadata)
 
 class BaseModel(Base):
     """Base model with common fields for all database models."""
@@ -26,4 +27,6 @@ class MigrationHistory(BaseModel):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        logging.info(f"Migration version {self.version} applied at {self.applied_at}") 
+        logging.info(f"Migration version {self.version} applied at {self.applied_at}")
+
+__all__ = ['Base', 'BaseModel', 'MigrationHistory', 'metadata'] 

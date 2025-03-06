@@ -1,14 +1,13 @@
-"""Database package."""
-from .models.base import Base, BaseModel, MigrationHistory
-from .models.models import User, FaceEncoding, AccessLog
+"""Database module initialization."""
+from .models import Base, metadata
 from .connection import DatabasePool
+
+# Create a singleton database pool instance
+db_pool = DatabasePool()
 
 __all__ = [
     'Base',
-    'BaseModel',
-    'User',
-    'FaceEncoding',
-    'AccessLog',
-    'MigrationHistory',
-    'DatabasePool'
+    'metadata',
+    'DatabasePool',
+    'db_pool'
 ] 

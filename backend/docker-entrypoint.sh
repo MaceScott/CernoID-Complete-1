@@ -15,16 +15,21 @@ check_gpu() {
 # Function to wait for database to be ready
 wait_for_db() {
     echo "Waiting for database to be ready..."
-    timeout=30
-    while ! pg_isready -h db -p 5432 -U postgres > /dev/null 2>&1; do
-        timeout=$((timeout - 1))
-        if [ $timeout -eq 0 ]; then
-            echo "Error: Database connection timeout"
-            exit 1
+    max_retries=30
+    retries=0
+
+    while [ $retries -lt $max_retries ]; do
+        if psql "postgresql://postgres:postgres@db:5432/cernoid" -c 'SELECT 1;' > /dev/null 2>&1; then
+            echo "Database is ready"
+            return 0
         fi
-        sleep 1
+        retries=$((retries + 1))
+        echo "Database is unavailable - retry $retries of $max_retries"
+        sleep 2
     done
-    echo "Database is ready"
+
+    echo "Error: Database connection timeout after $max_retries attempts"
+    exit 1
 }
 
 # Function to wait for Redis to be ready
@@ -52,8 +57,9 @@ fi
 wait_for_db
 wait_for_redis
 
+echo "Database is up - executing migrations"
+
 # Run database migrations
-echo "Running database migrations..."
 alembic upgrade head
 
 # Start the application

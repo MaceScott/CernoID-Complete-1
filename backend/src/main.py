@@ -1,75 +1,107 @@
+"""Main application entry point."""
 import os
 import sys
 import logging
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger(__name__)
+from src.core.logging import setup_logging, get_logger
+from src.core.config import Settings
+from src.core.database import db_pool
 
-def setup_environment():
-    """Set up environment variables and paths."""
-    try:
-        # Load environment variables from .env file
-        env_path = Path(__file__).parent.parent / '.env'
+# Initialize logging
+setup_logging(log_level="INFO", log_file="logs/app.log")
+logger = get_logger(__name__)
+
+# Load environment variables
+def setup_environment() -> None:
+    """Setup environment variables."""
+    env_path = Path(".env")
+    if env_path.exists():
         load_dotenv(env_path)
-        
-        # Add src directory to Python path
-        src_path = Path(__file__).parent
-        if str(src_path) not in sys.path:
-            sys.path.append(str(src_path))
-            
-        logger.info("Environment setup completed successfully")
-    except Exception as e:
-        logger.error(f"Error setting up environment: {e}")
-        sys.exit(1)
+        logger.info("Loaded environment variables from .env file")
+    else:
+        logger.warning(".env file not found, using system environment variables")
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
+    """Create FastAPI application."""
+    # Initialize environment
+    setup_environment()
+    
+    # Create FastAPI app
     app = FastAPI(
         title="CernoID API",
-        description="Backend API for CernoID facial recognition system",
+        description="Face Recognition and Identity Management API",
         version="1.0.0"
     )
-
+    
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, replace with specific origins
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Import and register routers
-    from api.routes import auth, users, recognition, monitoring
-    app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
-    app.include_router(users.router, prefix="/api/users", tags=["Users"])
-    app.include_router(recognition.router, prefix="/api/recognition", tags=["Recognition"])
-    app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
-
+    
+    # Initialize components
+    settings = Settings()
+    
+    @app.on_event("startup")
+    async def startup_event():
+        """Initialize application components on startup."""
+        try:
+            logger.info("Application initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize application: {str(e)}")
+            raise
+    
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        """Cleanup application components on shutdown."""
+        try:
+            await db_pool.close()
+            logger.info("Application shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during application shutdown: {str(e)}")
+            raise
+    
     @app.get("/health")
     async def health_check():
-        return {"status": "healthy"}
-
+        """Health check endpoint."""
+        try:
+            # Check database connection
+            async with db_pool.get_session() as session:
+                await session.execute("SELECT 1")
+            return {
+                "status": "healthy",
+                "database": "connected",
+                "version": "1.0.0"
+            }
+        except Exception as e:
+            logger.error(f"Health check failed: {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail="Service unavailable"
+            )
+    
+    # Import and register API routes
+    from src.api import router
+    app.include_router(router, prefix="/api")
+    
     return app
 
-# Initialize environment
-setup_environment()
-
-# Create FastAPI application
+# Create application instance
 app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    ) 

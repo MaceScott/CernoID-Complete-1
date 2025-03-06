@@ -2,12 +2,12 @@ from datetime import datetime, timedelta
 from typing import Optional
 import jwt
 from passlib.context import CryptContext
-from ..database import DatabasePool
+from src.core.database import db_pool
 
 class AuthManager:
     def __init__(self):
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        self.db_pool = DatabasePool()
+        self.db_pool = db_pool
         self.secret_key = "your-secret-key"  # Move to config
 
     async def authenticate_user(self, username: str, password: str) -> Optional[dict]:

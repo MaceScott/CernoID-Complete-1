@@ -1,13 +1,13 @@
 from typing import List, Optional
 import numpy as np
 from .detection import BatchDetector
-from ..database import DatabasePool
+from src.core.database import db_pool
 from ..error_handling import handle_exceptions
 
 class FaceProcessor:
     def __init__(self, confidence_threshold: float = 0.95):
         self.detector = BatchDetector()
-        self.db_pool = DatabasePool()
+        self.db_pool = db_pool
         self.threshold = confidence_threshold
         self._encoding_cache = {}
 

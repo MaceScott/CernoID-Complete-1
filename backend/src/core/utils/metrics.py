@@ -1,28 +1,28 @@
+"""Metrics and monitoring utilities."""
 import time
-from functools import wraps
-from typing import Callable, Any
-from core.logging import get_logger
+import functools
+from typing import Any, Callable, TypeVar
+from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-def track_time(func: Callable) -> Callable:
-    """
-    Decorator to track execution time of functions.
-    Logs the execution time and returns the result.
-    """
-    @wraps(func)
+T = TypeVar('T', bound=Callable[..., Any])
+
+def track_time(func: T) -> T:
+    """Decorator to track function execution time."""
+    @functools.wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         start_time = time.time()
         try:
             result = await func(*args, **kwargs)
-            execution_time = time.time() - start_time
-            logger.debug(f"{func.__name__} executed in {execution_time:.2f} seconds")
             return result
-        except Exception as e:
-            execution_time = time.time() - start_time
-            logger.error(f"{func.__name__} failed after {execution_time:.2f} seconds: {str(e)}")
-            raise
-    return wrapper
+        finally:
+            end_time = time.time()
+            duration = end_time - start_time
+            logger.info(
+                f"{func.__name__} took {duration:.2f} seconds to execute"
+            )
+    return wrapper  # type: ignore
 
 class MetricsCollector:
     """Class to collect and track various metrics."""

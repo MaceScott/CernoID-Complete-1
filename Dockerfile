@@ -22,19 +22,34 @@ ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["npm", "start"]
 
-# Backend build stage
-FROM python:3.11-slim AS backend-build
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-
 # Backend production stage
-FROM python:3.11-slim AS backend
+FROM python:3.10-slim AS backend
 WORKDIR /app
-COPY --from=backend-build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=backend-build /app/src ./src
-COPY --from=backend-build /app/main.py .
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY backend/src/ ./src/
+COPY backend/models/ ./models/
+COPY backend/config/ ./config/
+COPY backend/migrations/ ./migrations/
+COPY backend/alembic.ini .
+COPY backend/docker-entrypoint.sh .
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/data /app/logs && \
+    chmod +x docker-entrypoint.sh
+
 ENV PYTHONPATH=/app
 EXPOSE 8000
-CMD ["python", "main.py"] 
+CMD ["./docker-entrypoint.sh"] 

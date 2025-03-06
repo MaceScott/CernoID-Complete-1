@@ -1,62 +1,57 @@
 """Database connection management."""
 from typing import Optional, Dict, Any
 import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import AsyncAdaptedQueuePool
-from core.logging import get_logger
-from core.config import config
-from core.base import BaseComponent
+from src.core.logging import get_logger
+from src.core.config import settings
+from src.core.base import BaseComponent
 
 logger = get_logger(__name__)
 
 class DatabasePool(BaseComponent):
-    """Manages database connection pool."""
-    
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    """Database connection pool manager."""
+
+    def __init__(self) -> None:
+        """Initialize database pool."""
+        super().__init__()
         self._engine = None
-        self._session_factory = None
-        self._pool_size = config.get('database.pool_size', 5)
-        self._max_overflow = config.get('database.max_overflow', 10)
+        self._initialize_engine()
 
-    async def initialize(self) -> None:
-        """Initialize the database connection pool."""
+    def _initialize_engine(self) -> None:
+        """Initialize database engine with connection pool."""
         try:
-            database_url = config.get('database.url')
-            if not database_url:
-                raise ValueError("Database URL not configured")
-
             self._engine = create_async_engine(
-                database_url,
+                settings.database_url,
+                echo=settings.sql_debug,
+                future=True,
                 poolclass=AsyncAdaptedQueuePool,
-                pool_size=self._pool_size,
-                max_overflow=self._max_overflow,
-                echo=config.get('database.echo', False)
+                pool_pre_ping=True,
+                pool_size=settings.db_pool_size,
+                max_overflow=settings.db_max_overflow,
             )
-
-            self._session_factory = sessionmaker(
-                self._engine,
-                class_=AsyncSession,
-                expire_on_commit=False
-            )
-            
-            logger.info("Database connection pool initialized successfully")
+            logger.info("Database engine initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize database pool: {str(e)}")
+            logger.error(f"Failed to initialize database engine: {e}")
             raise
 
-    async def cleanup(self) -> None:
-        """Clean up database connections."""
+    @property
+    def engine(self):
+        """Get database engine instance."""
+        return self._engine
+
+    def get_session(self) -> AsyncSession:
+        """Create new database session."""
+        if not self._engine:
+            raise RuntimeError("Database engine not initialized")
+        return AsyncSession(self._engine, expire_on_commit=False)
+
+    async def dispose(self) -> None:
+        """Dispose database engine."""
         if self._engine:
             await self._engine.dispose()
-            logger.info("Database connections cleaned up")
-
-    async def get_session(self) -> AsyncSession:
-        """Get a new database session."""
-        if not self._session_factory:
-            raise RuntimeError("Database pool not initialized")
-        return self._session_factory()
+            logger.info("Database engine disposed")
 
     async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Execute a database query."""

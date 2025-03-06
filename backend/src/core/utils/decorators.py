@@ -1,8 +1,8 @@
 from functools import wraps
 from typing import Callable, Any, Optional
 import time
-from core.logging import get_logger
-from core.monitoring.service import monitoring_service
+from src.core.logging import get_logger
+from src.core.monitoring.service import monitoring_service
 
 logger = get_logger(__name__)
 

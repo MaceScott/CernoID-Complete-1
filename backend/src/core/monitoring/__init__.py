@@ -1,11 +1,8 @@
-from .health.health_monitor import HealthMonitor
-from .services.service_monitor import ServiceMonitor
-from .metrics.metrics import MetricsCollector
-from .camera.enhanced_monitor import CameraMonitor
+"""Monitoring module initialization."""
+from .health import HealthCheck
+from .service import monitoring_service
 
 __all__ = [
-    'HealthMonitor',
-    'ServiceMonitor',
-    'MetricsCollector',
-    'CameraMonitor'
+    'HealthCheck',
+    'monitoring_service'
 ]

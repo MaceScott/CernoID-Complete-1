@@ -1,21 +1,25 @@
 """
 FastAPI dependency injection functions.
 """
-from typing import Optional, Dict, AsyncGenerator, Type, Any
+from typing import Optional, Dict, AsyncGenerator, Type, Any, Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth.manager import AuthManager
-from core.face_recognition import FaceRecognitionSystem
-from core.config.settings import get_settings
-from core.errors import AppError, AppErrorCode
+from src.core.auth.manager import AuthManager
+from src.core.database.models.models import User
+from src.core.database import db_pool
+from src.core.face_recognition.core import FaceRecognitionSystem
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
 # Initialize managers
 auth_manager = AuthManager()
-settings = get_settings()
+recognition_service = FaceRecognitionSystem()
 
 class ServiceProvider:
     """Service provider with caching"""
@@ -44,43 +48,39 @@ async def get_service(service_class: Type[Any]) -> AsyncGenerator[Any, None]:
     finally:
         await service.cleanup()
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict:
-    """
-    Get current authenticated user from token.
-    
-    Args:
-        token: JWT token from request
-        
-    Returns:
-        Dict containing user information
-        
-    Raises:
-        HTTPException: If token is invalid or user not found
-    """
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Get database session."""
+    session = db_pool.get_session()
     try:
-        payload = await auth_manager.verify_token(token)
-        if not payload:
+        yield session
+    finally:
+        session.close()
+
+async def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    """Get current authenticated user."""
+    try:
+        user = await auth_manager.get_current_user(token, db)
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return payload
+        return user
     except Exception as e:
+        logger.error(f"Authentication error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-async def get_recognition_service() -> FaceRecognitionSystem:
-    """
-    Get face recognition service instance.
-    
-    Returns:
-        Configured FaceRecognitionSystem instance
-    """
-    return FaceRecognitionSystem()
+def get_recognition_service() -> FaceRecognitionSystem:
+    """Get recognition service instance."""
+    return recognition_service
 
 async def get_admin_user(
     current_user: Dict = Depends(get_current_user)

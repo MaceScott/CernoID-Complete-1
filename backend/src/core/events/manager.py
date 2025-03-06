@@ -4,7 +4,7 @@ import inspect
 from datetime import datetime
 from ..base import BaseComponent
 from ..utils.errors import handle_errors
-from core.logging import get_logger
+from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -12,7 +12,8 @@ class EventManager(BaseComponent):
     """Manages system events and their handlers."""
     
     def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+        super().__init__()
+        self.config = config
         self._handlers: Dict[str, List[Callable]] = {}
         self._event_queue = asyncio.Queue()
         self._processing = False

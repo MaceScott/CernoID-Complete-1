@@ -1,7 +1,7 @@
 from functools import wraps
 from typing import Callable, Any, Optional
-from core.logging import get_logger
-from core.utils.errors import AppError, ServiceError
+from src.core.logging import get_logger
+from src.core.utils.errors import ApplicationError as AppError, ServiceError
 
 logger = get_logger(__name__)
 
@@ -77,7 +77,7 @@ class ConfigurationError(FaceRecognitionError):
         super().__init__(f"Configuration error: {message}")
 
 # Usage example:
-@handle_exceptions(logger=custom_logger.error)
+@handle_exceptions(logger_func=logger.error)
 async def process_image(image_path: str):
     # Processing logic here
     pass 

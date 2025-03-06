@@ -1,22 +1,25 @@
+"""Service monitoring module."""
 from typing import Dict, Any, Optional
 import psutil
 import GPUtil
 from datetime import datetime
-from core.logging import get_logger
-from core.base import BaseComponent
-from core.config import config
+from src.core.logging import get_logger
+from src.core.base import BaseComponent
+from src.core.config import settings
 
 logger = get_logger(__name__)
 
 class MonitoringService(BaseComponent):
     """Service for monitoring system metrics and health."""
     
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the monitoring service."""
+        super().__init__()
+        self.config = config or settings.model_dump()
         self._metrics: Dict[str, Any] = {}
         self._health_status: Dict[str, Any] = {}
         self._last_update: Optional[datetime] = None
-        self._update_interval = config.get('monitoring.update_interval', 60)
+        self._update_interval = self.config.get('monitoring.update_interval', 60)
         
     async def initialize(self) -> None:
         """Initialize monitoring service."""
@@ -138,4 +141,4 @@ class MonitoringService(BaseComponent):
         return self._health_status.get('status') == 'healthy'
 
 # Global monitoring service instance
-monitoring_service = MonitoringService(config.to_dict()) 
+monitoring_service = MonitoringService() 
