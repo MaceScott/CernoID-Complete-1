@@ -1,13 +1,10 @@
 """Database models package."""
-from .base import Base, BaseModel, MigrationHistory, metadata
-from .models import User, FaceEncoding, AccessLog
+from .base import Base, BaseModel, metadata
+from .models import User
 
 __all__ = [
     'Base',
     'BaseModel',
     'User',
-    'FaceEncoding',
-    'AccessLog',
-    'MigrationHistory',
     'metadata'
 ] 

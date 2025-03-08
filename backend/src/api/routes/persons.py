@@ -12,10 +12,21 @@ from ..schemas import (
     PaginatedResponse,
     ErrorResponse
 )
-from core.utils.errors import handle_errors
+from src.core.utils.errors import handle_errors
 
 router = APIRouter(prefix="/persons", tags=["persons"])
 
 @router.post("/", response_model=PersonResponse)
-async def create_person(...):
-    # Person creation route implementation 
+async def create_person(
+    person: PersonCreate,
+    recognition_service = Depends(get_recognition_service),
+    current_user = Depends(get_admin_user)
+):
+    """Create a new person."""
+    try:
+        return await recognition_service.create_person(person)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        ) 

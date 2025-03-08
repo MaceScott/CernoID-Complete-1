@@ -4,6 +4,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import AsyncAdaptedQueuePool
+from fastapi import Depends
 from src.core.logging import get_logger
 from src.core.config import settings
 from src.core.base import BaseComponent
@@ -17,7 +18,6 @@ class DatabasePool(BaseComponent):
         """Initialize database pool."""
         super().__init__()
         self._engine = None
-        self._initialize_engine()
 
     def _initialize_engine(self) -> None:
         """Initialize database engine with connection pool."""
@@ -39,12 +39,14 @@ class DatabasePool(BaseComponent):
     @property
     def engine(self):
         """Get database engine instance."""
+        if not self._engine:
+            self._initialize_engine()
         return self._engine
 
     def get_session(self) -> AsyncSession:
         """Create new database session."""
         if not self._engine:
-            raise RuntimeError("Database engine not initialized")
+            self._initialize_engine()
         return AsyncSession(self._engine, expire_on_commit=False)
 
     async def dispose(self) -> None:
@@ -79,4 +81,15 @@ class DatabasePool(BaseComponent):
         async with self.get_session() as session:
             for params in params_list:
                 await session.execute(query, params)
-            await session.commit() 
+            await session.commit()
+
+# Create a global database pool instance
+db_pool = DatabasePool()
+
+async def get_db() -> AsyncSession:
+    """Get database session dependency."""
+    async with db_pool.get_session() as session:
+        try:
+            yield session
+        finally:
+            await session.close() 

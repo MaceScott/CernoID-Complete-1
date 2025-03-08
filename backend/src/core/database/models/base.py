@@ -15,7 +15,10 @@ class BaseModel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        """Initialize model with custom fields."""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
         logging.info(f"Initialized model {self.__class__.__name__} with ID {self.id}")
 
 class MigrationHistory(BaseModel):

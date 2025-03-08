@@ -10,32 +10,20 @@ RUN apt-get update && apt-get install -y \
     libx11-dev \
     libgtk-3-dev \
     libbz2-dev \
+    postgresql-client \
+    postgresql-server-dev-all \
+    redis-tools \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Verify redis-cli is available
+RUN which redis-cli || (echo "redis-cli not found" && exit 1)
 
 WORKDIR /app
 
 # Install Python dependencies
-RUN pip install --no-cache-dir \
-    fastapi==0.104.1 \
-    uvicorn==0.24.0 \
-    python-multipart==0.0.6 \
-    numpy==1.26.2 \
-    opencv-python==4.9.0.80 \
-    dlib==19.24.2 \
-    torch==2.1.1 \
-    torchvision==0.16.1 \
-    redis==5.0.1 \
-    pydantic==2.5.2 \
-    pydantic-settings==2.1.0 \
-    python-jose==3.3.0 \
-    passlib==1.7.4 \
-    bcrypt==4.0.1 \
-    python-dotenv==1.0.0 \
-    alembic==1.12.1 \
-    psycopg2-binary==2.9.9 \
-    sqlalchemy==2.0.23 \
-    asyncpg==0.29.0 \
-    aioredis==2.0.1
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt psycopg2-binary
 
 # Create models directory
 RUN mkdir -p models
@@ -45,6 +33,10 @@ COPY scripts/download_models.py scripts/
 
 # Run model download script
 RUN python scripts/download_models.py
+
+# Copy migrations directory
+COPY migrations migrations/
+COPY alembic.ini .
 
 # Copy the rest of the application files
 COPY . .

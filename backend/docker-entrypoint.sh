@@ -19,13 +19,16 @@ wait_for_db() {
     retries=0
 
     while [ $retries -lt $max_retries ]; do
-        if psql "postgresql://postgres:postgres@db:5432/cernoid" -c 'SELECT 1;' > /dev/null 2>&1; then
+        if PGPASSWORD=postgres psql -h db -U postgres -d cernoid -c 'SELECT 1;' 2>&1; then
             echo "Database is ready"
             return 0
+        else
+            retries=$((retries + 1))
+            echo "Database is unavailable - retry $retries of $max_retries"
+            echo "Connection error details:"
+            PGPASSWORD=postgres psql -h db -U postgres -d cernoid -c 'SELECT 1;' 2>&1 || true
+            sleep 2
         fi
-        retries=$((retries + 1))
-        echo "Database is unavailable - retry $retries of $max_retries"
-        sleep 2
     done
 
     echo "Error: Database connection timeout after $max_retries attempts"
@@ -35,16 +38,21 @@ wait_for_db() {
 # Function to wait for Redis to be ready
 wait_for_redis() {
     echo "Waiting for Redis to be ready..."
-    timeout=30
-    while ! redis-cli -h redis ping > /dev/null 2>&1; do
-        timeout=$((timeout - 1))
-        if [ $timeout -eq 0 ]; then
-            echo "Error: Redis connection timeout"
-            exit 1
+    max_retries=30
+    retries=0
+
+    while [ $retries -lt $max_retries ]; do
+        if redis-cli -h redis ping > /dev/null 2>&1; then
+            echo "Redis is ready"
+            return 0
         fi
-        sleep 1
+        retries=$((retries + 1))
+        echo "Redis is unavailable - retry $retries of $max_retries"
+        sleep 2
     done
-    echo "Redis is ready"
+
+    echo "Error: Redis connection timeout after $max_retries attempts"
+    exit 1
 }
 
 # Check GPU availability once and store the result

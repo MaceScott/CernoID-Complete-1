@@ -1,6 +1,6 @@
 """Configuration module initialization."""
-from .settings import Settings, settings
-from .manager import ConfigManager
-from .schema import ConfigSchema
+from .settings import Settings
 
-__all__ = ['Settings', 'settings', 'ConfigManager', 'ConfigSchema']
+settings = Settings()
+
+__all__ = ['Settings', 'settings']

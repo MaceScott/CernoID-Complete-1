@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="development")
     debug: bool = Field(default=True)
     log_level: str = Field(default="INFO")
+    api_prefix: str = Field(default="/api/v1", description="API prefix for all routes")
     
     # Database
     db_host: str = Field(default="db")

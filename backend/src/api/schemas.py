@@ -61,7 +61,7 @@ class AccessLog(BaseModel):
     person_name: Optional[str]
     access_time: datetime
     access_point: str
-    access_type: str = Field(..., regex='^(entry|exit)$')
+    access_type: str = Field(..., pattern='^(entry|exit)$')
     success: bool
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
     

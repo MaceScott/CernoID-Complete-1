@@ -7,14 +7,18 @@ from fastapi import APIRouter
 from .recognition import router as recognition_router
 from .persons import router as persons_router
 from .logs import router as logs_router
-from core.config.settings import get_settings
+from .auth import router as auth_router
 
-settings = get_settings()
-
-# Create main router with version prefix
-main_router = APIRouter(prefix=settings.api_prefix)
+# Create main router
+main_router = APIRouter()
 
 # Include all route modules
+main_router.include_router(
+    auth_router,
+    prefix="/auth",
+    tags=["auth"]
+)
+
 main_router.include_router(
     recognition_router,
     prefix="/recognition",
@@ -33,15 +37,10 @@ main_router.include_router(
     tags=["logs"]
 )
 
-# Health check endpoint
+# Export the main router
+router = main_router
+
 @main_router.get("/health", tags=["system"])
 async def health_check():
-    """System health check endpoint"""
-    return {
-        "status": "healthy",
-        "version": settings.api_version,
-        "environment": settings.environment
-    }
-
-# Export the configured router
-__all__ = ["main_router"]
+    """Health check endpoint."""
+    return {"status": "healthy"}

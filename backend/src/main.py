@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from src.core.logging import setup_logging, get_logger
 from src.core.config import Settings
 from src.core.database import db_pool
+from src.api.routes import main_router
 
 # Initialize logging
 setup_logging(log_level="INFO", log_file="logs/app.log")
@@ -87,9 +88,8 @@ def create_app() -> FastAPI:
                 detail="Service unavailable"
             )
     
-    # Import and register API routes
-    from src.api import router
-    app.include_router(router, prefix="/api")
+    # Register API routes
+    app.include_router(main_router, prefix="/api/v1")
     
     return app
 

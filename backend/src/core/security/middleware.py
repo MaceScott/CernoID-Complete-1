@@ -2,15 +2,15 @@ from fastapi import Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from typing import Optional, List, Dict, Callable, Any
 import time
-from core.auth.manager import AuthManager
+from src.core.auth.manager import AuthManager
 from ..base import BaseComponent
-from ..utils.errors import SecurityError, handle_errors
+from ..utils.errors import AuthenticationError, handle_errors
 from .crypto import CryptoManager
 import re
 import ipaddress
 import jwt
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from datetime import datetime
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -249,7 +249,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             return None
             
         except Exception as e:
-            raise SecurityError(f"Request validation failed: {str(e)}")
+            raise AuthenticationError(f"Request validation failed: {str(e)}")
 
     def _setup_validators(self) -> None:
         """Setup request validators"""
