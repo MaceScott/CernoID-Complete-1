@@ -20,6 +20,7 @@ import asyncio
 import GPUtil
 from functools import lru_cache
 from cachetools import TTLCache
+import dlib
 
 from src.core.events.manager import event_manager
 from src.core.error_handling import handle_exceptions
@@ -71,45 +72,34 @@ class FaceRecognitionSystem:
         self.event_manager = event_manager
         self.db_pool = db_pool
         
-        # GPU configuration
-        self.device = torch.device('cuda' if torch.cuda.is_available() and 
-                                 self.config.gpu_enabled else 'cpu')
+        # GPU configuration - disabled for now since we're using dlib
+        self.device = torch.device('cpu')
         logger.info(f"Using device: {self.device}")
         
         # Initialize components
         self._detector = self._init_detector()
         self._encoder = self._init_encoder()
         self._landmark_detector = self._init_landmark_detector()
-        self._attribute_analyzer = self._init_attribute_analyzer()
         
-        # Optimize batch size based on available GPU memory
-        if torch.cuda.is_available():
-            gpu = GPUtil.getGPUs()[0]
-            total_mem = gpu.memoryTotal
-            self._batch_size = min(32, max(4, int(total_mem / 500)))  # Heuristic: 500MB per batch
-        else:
-            self._batch_size = 4
+        # Batch size for CPU
+        self._batch_size = 4
             
         # Enhanced caching with TTL
         self._encoding_cache = TTLCache(
-            maxsize=self.config.face_recognition_cache_size,
-            ttl=self.config.face_recognition_cache_ttl
+            maxsize=self.config.FACE_RECOGNITION_CACHE_SIZE,
+            ttl=self.config.FACE_RECOGNITION_CACHE_TTL
         )
         
         # Optimize processing settings
-        self._face_size = self.config.recognition_face_size
-        self._min_quality = self.config.recognition_min_quality
-        
-        # Use mixed precision training
-        self.scaler = torch.cuda.amp.GradScaler()
-        self.use_amp = torch.cuda.is_available()
+        self._face_size = self.config.RECOGNITION_FACE_SIZE
+        self._min_quality = self.config.RECOGNITION_MIN_QUALITY
         
         # Cache settings
-        self.matching_threshold = self.config.face_recognition_matching_threshold
+        self.matching_threshold = self.config.FACE_RECOGNITION_MATCHING_THRESHOLD
         
         # Performance settings
-        self._min_face_size = self.config.face_recognition_min_face_size
-        self._scale_factor = self.config.face_recognition_scale_factor
+        self._min_face_size = self.config.FACE_RECOGNITION_MIN_FACE_SIZE
+        self._scale_factor = self.config.FACE_RECOGNITION_SCALE_FACTOR
         
         # Feature extraction settings
         self._normalize = transforms.Normalize(
@@ -139,81 +129,39 @@ class FaceRecognitionSystem:
         }
         
         # Distance detection settings
-        self._focal_length = self.config.recognition_focal_length
-        self._avg_face_width = self.config.recognition_avg_face_width
-        self._activation_range = self.config.recognition_activation_range
-        self._long_range_threshold = self.config.recognition_long_range_threshold
+        self._focal_length = self.config.RECOGNITION_FOCAL_LENGTH
+        self._avg_face_width = self.config.RECOGNITION_AVG_FACE_WIDTH
+        self._activation_range = self.config.RECOGNITION_ACTIVATION_RANGE
+        self._long_range_threshold = self.config.RECOGNITION_LONG_RANGE_THRESHOLD
 
-    def _init_detector(self) -> Union[cv2.CascadeClassifier, torch.nn.Module]:
-        """Initialize face detector"""
+    def _init_detector(self) -> cv2.CascadeClassifier:
+        """Initialize face detector using OpenCV Haar Cascade"""
         try:
-            if self.device.type == 'cuda':
-                # Use TorchScript model for GPU
-                model_path = self.config.face_detection_torch_model_path
-                model = torch.jit.load(model_path, map_location=self.device)
-                model.eval()
-                return model
-            else:
-                # Use OpenCV for CPU
-                cascade_path = self.config.face_detection_cascade_path
-                detector = cv2.CascadeClassifier(cascade_path)
-                if detector.empty():
-                    raise ValueError(f"Failed to load cascade classifier from {cascade_path}")
-                return detector
+            cascade_path = self.config.FACE_DETECTION_CASCADE_PATH
+            detector = cv2.CascadeClassifier(cascade_path)
+            if detector.empty():
+                raise ValueError(f"Failed to load cascade classifier from {cascade_path}")
+            return detector
         except Exception as e:
             logger.error(f"Error initializing face detector: {e}")
             raise
 
-    def _init_encoder(self) -> Union['dlib.face_recognition_model_v1', torch.nn.Module]:
-        """Initialize face encoder with GPU support if available"""
+    def _init_encoder(self) -> 'dlib.face_recognition_model_v1':
+        """Initialize face encoder using dlib"""
         try:
-            if self.device.type == 'cuda':
-                # Use PyTorch model for GPU
-                model_path = self.config.face_encoding_torch_model_path
-                model = torch.jit.load(model_path, map_location=self.device)
-                model.eval()
-                return model
-            else:
-                # Use dlib for CPU
-                import dlib
-                model_path = self.config.face_encoding_dlib_model_path
-                return dlib.face_recognition_model_v1(model_path)
+            model_path = self.config.FACE_ENCODING_DLIB_MODEL_PATH
+            return dlib.face_recognition_model_v1(model_path)
         except Exception as e:
             logger.error(f"Error initializing face encoder: {e}")
             raise
 
-    def _init_landmark_detector(self) -> torch.nn.Module:
-        """Initialize facial landmark detection model"""
+    def _init_landmark_detector(self) -> 'dlib.shape_predictor':
+        """Initialize facial landmark detection using dlib"""
         try:
-            model_path = self.config.recognition_landmark_model
-            if not model_path:
-                raise ValueError("Landmark model path not configured")
-                
-            model = torch.load(model_path)
-            model = model.to(self.device)
-            model.eval()
-            
-            return model
-            
+            model_path = "/app/models/shape_predictor_68_face_landmarks.dat"
+            return dlib.shape_predictor(model_path)
         except Exception as e:
             logger.error(f"Failed to load landmark model: {str(e)}")
-            raise
-
-    def _init_attribute_analyzer(self) -> torch.nn.Module:
-        """Initialize facial attribute analysis model"""
-        try:
-            model_path = self.config.recognition_attribute_model
-            if not model_path:
-                raise ValueError("Attribute model path not configured")
-                
-            model = torch.load(model_path)
-            model = model.to(self.device)
-            model.eval()
-            
-            return model
-            
-        except Exception as e:
-            logger.error(f"Failed to load attribute model: {str(e)}")
             raise
 
     @handle_exceptions(logger_func=logger.error)
@@ -351,57 +299,31 @@ class FaceRecognitionSystem:
         for batch_idx in range(0, len(frames), self._batch_size):
             batch_frames = frames[batch_idx:batch_idx + self._batch_size]
             
-            if isinstance(self._detector, torch.nn.Module):
-                # GPU detection
-                batch_tensors = [self._preprocess_image(frame) for frame in batch_frames]
-                batch_tensor = torch.cat(batch_tensors, dim=0)
+            # CPU detection
+            batch_grays = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
+                         for frame in batch_frames]
+            
+            for idx, (frame, gray) in enumerate(zip(batch_frames, batch_grays)):
+                faces = self._detector.detectMultiScale(
+                    gray,
+                    scaleFactor=self._scale_factor,
+                    minNeighbors=5,
+                    minSize=self._min_face_size
+                )
                 
-                with torch.no_grad():
-                    batch_detections = self._detector(batch_tensor)
+                for (x, y, w, h) in faces:
+                    face_image = frame[y:y+h, x:x+w]
+                    confidence = self._compute_detection_confidence(face_image)
                     
-                for idx, (frame, dets) in enumerate(zip(batch_frames, batch_detections)):
-                    frame_dets = self._process_detections(dets, frame.shape)
-                    for det in frame_dets:
-                        if det["confidence"] > min_confidence:
-                            x1, y1, x2, y2 = det["bbox"]
-                            face_width = x2 - x1
-                            distance = self._estimate_distance(face_width)
-                            
-                            face_image = frame[y1:y2, x1:x2]
-                            detections.append(FaceDetection(
-                                bbox=(x1, y1, x2-x1, y2-y1),
-                                confidence=det["confidence"],
-                                frame_index=batch_idx + idx,
-                                face_image=face_image,
-                                landmarks=det.get("landmarks"),
-                                distance=distance
-                            ))
-            else:
-                # CPU detection
-                batch_grays = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
-                             for frame in batch_frames]
-                
-                for idx, (frame, gray) in enumerate(zip(batch_frames, batch_grays)):
-                    faces = self._detector.detectMultiScale(
-                        gray,
-                        scaleFactor=self._scale_factor,
-                        minNeighbors=5,
-                        minSize=self._min_face_size
-                    )
-                    
-                    for (x, y, w, h) in faces:
-                        face_image = frame[y:y+h, x:x+w]
-                        confidence = self._compute_detection_confidence(face_image)
-                        
-                        if confidence > min_confidence:
-                            distance = self._estimate_distance(w)
-                            detections.append(FaceDetection(
-                                bbox=(x, y, w, h),
-                                confidence=confidence,
-                                frame_index=batch_idx + idx,
-                                face_image=face_image,
-                                distance=distance
-                            ))
+                    if confidence > min_confidence:
+                        distance = self._estimate_distance(w)
+                        detections.append(FaceDetection(
+                            bbox=(x, y, w, h),
+                            confidence=confidence,
+                            frame_index=batch_idx + idx,
+                            face_image=face_image,
+                            distance=distance
+                        ))
                     
         logger.info(f"Detected {len(detections)} faces in {len(frames)} frames")
         return detections

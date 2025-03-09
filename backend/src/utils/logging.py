@@ -10,7 +10,7 @@ def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
     logger = logging.getLogger(name)
     
     if level is None:
-        level = getattr(logging, settings.log_level.upper())
+        level = getattr(logging, settings.LOG_LEVEL.upper())
     
     logger.setLevel(level)
     

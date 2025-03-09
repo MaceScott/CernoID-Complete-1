@@ -20,9 +20,9 @@ class AuthManager:
     
     def __init__(self):
         """Initialize auth manager."""
-        self.secret_key = settings.secret_key
-        self.algorithm = settings.algorithm
-        self.access_token_expire_minutes = settings.access_token_expire_minutes
+        self.secret_key = settings.SECRET_KEY
+        self.algorithm = settings.ALGORITHM
+        self.access_token_expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
         
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash."""

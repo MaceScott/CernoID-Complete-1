@@ -7,6 +7,7 @@ export interface User {
   isAdmin: boolean;
   accessLevel: number;
   allowedZones: string[];
+  permissions: string[];
   lastLogin: string | null;
   lastAccess: string | null;
   accessHistory: {

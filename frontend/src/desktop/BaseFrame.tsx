@@ -1,7 +1,9 @@
+'use client';
+
 import React, { useEffect, useState } from 'react';
 import { Box, Container, useTheme } from '@mui/material';
 import { useAuth } from '../hooks/useAuth';
-import { useNavigation } from '../hooks/useNavigation';
+import { useRouter } from 'next/navigation';
 
 interface BaseFrameProps {
   children: React.ReactNode;
@@ -10,18 +12,18 @@ interface BaseFrameProps {
 
 export const BaseFrame: React.FC<BaseFrameProps> = ({ children, title }) => {
   const theme = useTheme();
-  const { isAuthenticated } = useAuth();
-  const { navigate } = useNavigation();
+  const { user } = useAuth();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Check authentication
-    if (!isAuthenticated) {
-      navigate('/login');
+    if (!user) {
+      router.push('/login');
       return;
     }
     setIsLoading(false);
-  }, [isAuthenticated, navigate]);
+  }, [user, router]);
 
   if (isLoading) {
     return <div>Loading...</div>;

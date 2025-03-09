@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+import { useRouter } from 'next/navigation';
 import { api } from '@/services/api';
 import { User } from '@/types/user';
 
@@ -59,6 +59,28 @@ export function useAuth() {
         isLoading: false,
         error: 'Invalid email or password'
       }));
+      throw error;
+    }
+  };
+
+  const loginWithFace = async (imageData: string) => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
+      const response = await api.post('/auth/login/face', { imageData });
+      setAuthState({
+        user: response.data.user,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      });
+      router.push('/dashboard');
+    } catch (error) {
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: 'Face recognition failed'
+      }));
+      throw error;
     }
   };
 
@@ -85,6 +107,7 @@ export function useAuth() {
   return {
     ...authState,
     login,
+    loginWithFace,
     logout,
     checkAuth
   };

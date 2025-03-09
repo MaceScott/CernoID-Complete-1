@@ -1,9 +1,9 @@
 """Database connection management."""
 from typing import Optional, Dict, Any
-import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import AsyncAdaptedQueuePool
+from sqlalchemy import create_engine, Engine
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import QueuePool
+from contextlib import contextmanager
 from fastapi import Depends
 from src.core.logging import get_logger
 from src.core.config import settings
@@ -18,18 +18,25 @@ class DatabasePool(BaseComponent):
         """Initialize database pool."""
         super().__init__()
         self._engine = None
+        self._session_factory = None
 
     def _initialize_engine(self) -> None:
         """Initialize database engine with connection pool."""
         try:
-            self._engine = create_async_engine(
-                settings.database_url,
-                echo=settings.sql_debug,
+            self._engine = create_engine(
+                settings.DATABASE_URL,
+                echo=False,
                 future=True,
-                poolclass=AsyncAdaptedQueuePool,
+                poolclass=QueuePool,
                 pool_pre_ping=True,
-                pool_size=settings.db_pool_size,
-                max_overflow=settings.db_max_overflow,
+                pool_size=5,
+                max_overflow=10,
+            )
+            self._session_factory = sessionmaker(
+                bind=self._engine,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False
             )
             logger.info("Database engine initialized successfully")
         except Exception as e:
@@ -37,59 +44,64 @@ class DatabasePool(BaseComponent):
             raise
 
     @property
-    def engine(self):
+    def engine(self) -> Engine:
         """Get database engine instance."""
         if not self._engine:
             self._initialize_engine()
         return self._engine
 
-    def get_session(self) -> AsyncSession:
+    @contextmanager
+    def get_session(self) -> Session:
         """Create new database session."""
-        if not self._engine:
+        if not self._session_factory:
             self._initialize_engine()
-        return AsyncSession(self._engine, expire_on_commit=False)
+        
+        session = self._session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
-    async def dispose(self) -> None:
+    def dispose(self) -> None:
         """Dispose database engine."""
         if self._engine:
-            await self._engine.dispose()
+            self._engine.dispose()
             logger.info("Database engine disposed")
 
-    async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Execute a database query."""
-        async with self.get_session() as session:
-            result = await session.execute(query, params or {})
-            await session.commit()
+        with self.get_session() as session:
+            result = session.execute(query, params or {})
             return result
 
-    async def fetch_one(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def fetch_one(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Fetch a single row from the database."""
-        async with self.get_session() as session:
-            result = await session.execute(query, params or {})
+        with self.get_session() as session:
+            result = session.execute(query, params or {})
             row = result.fetchone()
             return dict(row) if row else None
 
-    async def fetch_all(self, query: str, params: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
+    def fetch_all(self, query: str, params: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
         """Fetch all rows from the database."""
-        async with self.get_session() as session:
-            result = await session.execute(query, params or {})
+        with self.get_session() as session:
+            result = session.execute(query, params or {})
             rows = result.fetchall()
             return [dict(row) for row in rows]
 
-    async def execute_many(self, query: str, params_list: list[Dict[str, Any]]) -> None:
+    def execute_many(self, query: str, params_list: list[Dict[str, Any]]) -> None:
         """Execute multiple database queries."""
-        async with self.get_session() as session:
+        with self.get_session() as session:
             for params in params_list:
-                await session.execute(query, params)
-            await session.commit()
+                session.execute(query, params)
 
 # Create a global database pool instance
 db_pool = DatabasePool()
 
-async def get_db() -> AsyncSession:
+def get_db() -> Session:
     """Get database session dependency."""
-    async with db_pool.get_session() as session:
-        try:
-            yield session
-        finally:
-            await session.close() 
+    with db_pool.get_session() as session:
+        yield session 

@@ -55,6 +55,30 @@ wait_for_redis() {
     exit 1
 }
 
+# Function to handle database migrations
+handle_migrations() {
+    echo "Setting up database migrations..."
+    
+    # Check if migrations exist
+    if [ ! -d "/app/migrations/versions" ]; then
+        echo "Creating migrations directory..."
+        mkdir -p /app/migrations/versions
+    fi
+    
+    # Initialize migrations if not already initialized
+    if [ ! -f "/app/migrations/env.py" ]; then
+        echo "Initializing migrations..."
+        cd /app && alembic init migrations
+    fi
+    
+    echo "Running database migrations..."
+    cd /app && alembic upgrade head || {
+        echo "Migration failed, attempting to create initial migration..."
+        cd /app && alembic revision --autogenerate -m "initial migration"
+        cd /app && alembic upgrade head
+    }
+}
+
 # Check GPU availability once and store the result
 GPU_AVAILABLE=0
 if check_gpu; then
@@ -66,9 +90,7 @@ wait_for_db
 wait_for_redis
 
 echo "Database is up - executing migrations"
-
-# Run database migrations
-alembic upgrade head
+handle_migrations
 
 # Start the application
 if [ "$ENVIRONMENT" = "development" ]; then

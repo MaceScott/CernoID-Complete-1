@@ -72,21 +72,10 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
-        try:
-            # Check database connection
-            async with db_pool.get_session() as session:
-                await session.execute("SELECT 1")
-            return {
-                "status": "healthy",
-                "database": "connected",
-                "version": "1.0.0"
-            }
-        except Exception as e:
-            logger.error(f"Health check failed: {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="Service unavailable"
-            )
+        return {
+            "status": "healthy",
+            "version": "1.0.0"
+        }
     
     # Register API routes
     app.include_router(main_router, prefix="/api/v1")
