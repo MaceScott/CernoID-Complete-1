@@ -257,80 +257,80 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             'ip': self._validate_ip,
             'host': self._validate_host,
             'size': self._validate_size,
-            'xss': self._validate_xss,
-            'sql': self._validate_sql,
-            'content': self._validate_content_type
+            'xss': self._validate_xss
         }
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def _validate_ip(self, request: Request) -> Optional[Response]:
         """Validate client IP address"""
-        ip = self._get_client_ip(request)
+        client_ip = self._get_client_ip(request)
         
-        # Check blocked IPs
-        if self._is_ip_blocked(ip):
-            return Response(
-                content="Access denied",
-                status_code=403
+        # Check if IP is blocked
+        if self._is_ip_blocked(client_ip):
+            return JSONResponse(
+                status_code=403,
+                content={'detail': 'IP address is blocked'}
             )
             
-        # Check allowed IPs if configured
-        if self._allowed_ips and not self._is_ip_allowed(ip):
-            return Response(
-                content="Access denied",
-                status_code=403
+        # Check if IP is allowed
+        if not self._is_ip_allowed(client_ip):
+            return JSONResponse(
+                status_code=403,
+                content={'detail': 'IP address is not allowed'}
             )
             
         return None
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def _validate_host(self, request: Request) -> Optional[Response]:
-        """Validate request host"""
-        if not self._allowed_hosts:
-            return None
-            
+        """Validate host header"""
         host = request.headers.get('host', '').split(':')[0]
+        
+        if not host:
+            return JSONResponse(
+                status_code=400,
+                content={'detail': 'Missing host header'}
+            )
+            
         if host not in self._allowed_hosts:
-            return Response(
-                content="Invalid host",
-                status_code=400
+            return JSONResponse(
+                status_code=403,
+                content={'detail': 'Host not allowed'}
             )
             
         return None
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def _validate_size(self, request: Request) -> Optional[Response]:
         """Validate request body size"""
-        content_length = request.headers.get('content-length')
-        if content_length and int(content_length) > self._max_body_size:
-            return Response(
-                content="Request too large",
-                status_code=413
+        if request.headers.get('content-length', 0) > self._max_body_size:
+            return JSONResponse(
+                status_code=413,
+                content={'detail': 'Request body too large'}
             )
-            
         return None
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def _validate_xss(self, request: Request) -> Optional[Response]:
-        """Validate request for XSS attempts"""
+        """Validate request for XSS attacks"""
         if not self._xss_protection:
             return None
             
-        # Check headers and query params
-        xss_patterns = [
-            r"<script.*?>",
-            r"javascript:",
-            r"on\w+\s*=",
-            r"eval\(",
-        ]
-        
-        # Check URL and query parameters
-        url = str(request.url)
-        for pattern in xss_patterns:
-            if re.search(pattern, url, re.IGNORECASE):
-                return Response(
-                    content="Invalid request",
-                    status_code=400
+        # Check headers
+        headers = dict(request.headers)
+        for header in headers.values():
+            if self._contains_xss(header):
+                return JSONResponse(
+                    status_code=400,
+                    content={'detail': 'Potential XSS attack detected'}
+                )
+                
+        # Check query params
+        for param in request.query_params.values():
+            if self._contains_xss(param):
+                return JSONResponse(
+                    status_code=400,
+                    content={'detail': 'Potential XSS attack detected'}
                 )
                 
         return None

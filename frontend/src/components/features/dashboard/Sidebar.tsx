@@ -1,53 +1,74 @@
 'use client';
 
-import React from 'react';
 import {
-  Box,
+  Drawer,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
-  Paper
+  Divider,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
+  Videocam as VideocamIcon,
   Face as FaceIcon,
-  History as HistoryIcon,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  AdminPanelSettings as AdminIcon,
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/app/providers/AuthProvider';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export const Sidebar = ({ open, onClose }: SidebarProps) => {
   const router = useRouter();
+  const { user } = useAuth();
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+    { text: 'Cameras', icon: <VideocamIcon />, path: '/cameras' },
     { text: 'Recognition', icon: <FaceIcon />, path: '/recognition' },
-    { text: 'History', icon: <HistoryIcon />, path: '/history' },
-    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' }
+    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 
+  if (user?.role === 'admin') {
+    menuItems.push({ text: 'Admin', icon: <AdminIcon />, path: '/admin' });
+  }
+
+  const handleNavigation = (path: string) => {
+    router.push(path);
+    onClose();
+  };
+
   return (
-    <Paper sx={{ width: 240, height: '100%', p: 2 }}>
+    <Drawer
+      anchor="left"
+      open={open}
+      onClose={onClose}
+      sx={{
+        width: 240,
+        flexShrink: 0,
+        '& .MuiDrawer-paper': {
+          width: 240,
+          boxSizing: 'border-box',
+        },
+      }}
+    >
       <List>
         {menuItems.map((item) => (
           <ListItem
             button
             key={item.text}
-            onClick={() => router.push(item.path)}
-            sx={{
-              borderRadius: 1,
-              mb: 1,
-              '&:hover': {
-                bgcolor: 'action.hover'
-              }
-            }}
+            onClick={() => handleNavigation(item.path)}
           >
             <ListItemIcon>{item.icon}</ListItemIcon>
             <ListItemText primary={item.text} />
           </ListItem>
         ))}
       </List>
-    </Paper>
+    </Drawer>
   );
 }; 

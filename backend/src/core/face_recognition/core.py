@@ -21,6 +21,9 @@ import GPUtil
 from functools import lru_cache
 from cachetools import TTLCache
 import dlib
+import os
+import json
+import urllib.request
 
 from src.core.events.manager import event_manager
 from src.core.error_handling import handle_exceptions
@@ -29,11 +32,20 @@ from src.core.database import db_pool
 from src.core.utils.decorators import measure_performance
 from src.core.monitoring.service import monitoring_service
 from gtts import gTTS
-import os
-import json
+from ..base import BaseComponent
+from ..utils.errors import handle_errors
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Get the path to the local cascade classifier and dlib models
+CASCADE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'haarcascade_frontalface_default.xml')
+DLIB_FACE_RECOGNITION_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'data', 'dlib_face_recognition_resnet_model_v1.dat')
+DLIB_SHAPE_PREDICTOR_PATH = os.path.join(os.path.dirname(__file__), 'data', 'shape_predictor_68_face_landmarks.dat')
+
+# URLs for downloading dlib models
+DLIB_FACE_RECOGNITION_MODEL_URL = "https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2"
+DLIB_SHAPE_PREDICTOR_URL = "https://github.com/davisking/dlib-models/raw/master/shape_predictor_68_face_landmarks.dat.bz2"
 
 @dataclass
 class FaceFeatures:
@@ -64,107 +76,224 @@ class FaceMatch:
     confidence: float
     metadata: Optional[Dict] = None
 
-class FaceRecognitionSystem:
+class FaceRecognitionSystem(BaseComponent):
     """Unified face recognition system with GPU support"""
     
     def __init__(self):
+        """Initialize face recognition system."""
+        super().__init__()
         self.config = settings
         self.event_manager = event_manager
         self.db_pool = db_pool
+        self.is_initialized = False
+        self._initializing = False
         
         # GPU configuration - disabled for now since we're using dlib
-        self.device = torch.device('cpu')
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {self.device}")
-        
-        # Initialize components
-        self._detector = self._init_detector()
-        self._encoder = self._init_encoder()
-        self._landmark_detector = self._init_landmark_detector()
-        
-        # Batch size for CPU
-        self._batch_size = 4
-            
-        # Enhanced caching with TTL
-        self._encoding_cache = TTLCache(
-            maxsize=self.config.FACE_RECOGNITION_CACHE_SIZE,
-            ttl=self.config.FACE_RECOGNITION_CACHE_TTL
-        )
-        
-        # Optimize processing settings
-        self._face_size = self.config.RECOGNITION_FACE_SIZE
-        self._min_quality = self.config.RECOGNITION_MIN_QUALITY
-        
-        # Cache settings
-        self.matching_threshold = self.config.FACE_RECOGNITION_MATCHING_THRESHOLD
-        
-        # Performance settings
-        self._min_face_size = self.config.FACE_RECOGNITION_MIN_FACE_SIZE
-        self._scale_factor = self.config.FACE_RECOGNITION_SCALE_FACTOR
-        
-        # Feature extraction settings
-        self._normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        )
-        
-        # Processing state
-        self._processing_queue = asyncio.Queue(maxsize=100)
-        self._batch_lock = asyncio.Lock()
-        
-        # Initialize monitoring
-        self.monitoring = monitoring_service
-        
-        # Statistics
-        self._stats = {
-            'total_processed': 0,
-            'average_inference_time': 0.0,
-            'cache_hits': 0,
-            'cache_misses': 0,
-            'gpu_utilization': 0.0,
-            'memory_usage': 0.0,
-            'faces_processed': 0,
-            'features_extracted': 0,
-            'average_quality': 0.0,
-            'processing_time': 0.0
-        }
-        
-        # Distance detection settings
-        self._focal_length = self.config.RECOGNITION_FOCAL_LENGTH
-        self._avg_face_width = self.config.RECOGNITION_AVG_FACE_WIDTH
-        self._activation_range = self.config.RECOGNITION_ACTIVATION_RANGE
-        self._long_range_threshold = self.config.RECOGNITION_LONG_RANGE_THRESHOLD
 
-    def _init_detector(self) -> cv2.CascadeClassifier:
+    @handle_errors
+    async def initialize(self) -> None:
+        """Initialize the face recognition system."""
+        if self.is_initialized:
+            logger.info("Face recognition system already initialized")
+            return
+            
+        if self._initializing:
+            logger.info("Face recognition system initialization already in progress")
+            return
+            
+        self._initializing = True
+        
+        try:
+            # Create data directory if it doesn't exist
+            data_dir = os.path.join(os.path.dirname(__file__), 'data')
+            os.makedirs(data_dir, exist_ok=True)
+            
+            # Download and prepare models
+            await self._download_and_prepare_models()
+            
+            # Initialize components
+            self._detector = await self._init_detector()
+            self._encoder = await self._init_encoder()
+            self._landmark_detector = await self._init_landmark_detector()
+            
+            # Batch size for CPU
+            self._batch_size = 4
+                
+            # Enhanced caching with TTL
+            self._encoding_cache = TTLCache(
+                maxsize=self.config.FACE_RECOGNITION_CACHE_SIZE,
+                ttl=self.config.FACE_RECOGNITION_CACHE_TTL
+            )
+            
+            # Optimize processing settings
+            self._face_size = self.config.RECOGNITION_FACE_SIZE
+            self._min_quality = self.config.RECOGNITION_MIN_QUALITY
+            
+            # Cache settings
+            self.matching_threshold = self.config.FACE_RECOGNITION_MATCHING_THRESHOLD
+            
+            # Performance settings
+            self._min_face_size = self.config.FACE_RECOGNITION_MIN_FACE_SIZE
+            self._scale_factor = self.config.FACE_RECOGNITION_SCALE_FACTOR
+            
+            # Feature extraction settings
+            self._normalize = transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+            
+            # Processing state
+            self._processing_queue = asyncio.Queue(maxsize=100)
+            self._batch_lock = asyncio.Lock()
+            
+            # Initialize monitoring
+            self.monitoring = monitoring_service
+            
+            # Statistics
+            self._stats = {
+                'total_processed': 0,
+                'average_inference_time': 0.0,
+                'cache_hits': 0,
+                'cache_misses': 0,
+                'gpu_utilization': 0.0,
+                'memory_usage': 0.0,
+                'faces_processed': 0,
+                'features_extracted': 0,
+                'average_quality': 0.0,
+                'processing_time': 0.0
+            }
+            
+            # Distance detection settings
+            self._focal_length = self.config.RECOGNITION_FOCAL_LENGTH
+            self._avg_face_width = self.config.RECOGNITION_AVG_FACE_WIDTH
+            self._activation_range = self.config.RECOGNITION_ACTIVATION_RANGE
+            self._long_range_threshold = self.config.RECOGNITION_LONG_RANGE_THRESHOLD
+            
+            # Initialize face recognition model
+            self.model = await self._load_model()
+            
+            self.is_initialized = True
+            logger.info("Face recognition system initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize face recognition system: {e}")
+            raise
+        finally:
+            self._initializing = False
+
+    @handle_errors
+    async def cleanup(self) -> None:
+        """Cleanup face recognition system resources."""
+        if not self.is_initialized:
+            logger.info("Face recognition system not initialized, nothing to clean up")
+            return
+            
+        try:
+            # Clear caches
+            if hasattr(self, '_encoding_cache'):
+                self._encoding_cache.clear()
+            
+            # Clear processing queue
+            if hasattr(self, '_processing_queue'):
+                while not self._processing_queue.empty():
+                    try:
+                        self._processing_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+            
+            # Release GPU memory if using CUDA
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            
+            self.is_initialized = False
+            logger.info("Face recognition system cleaned up successfully")
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up face recognition system: {e}")
+            raise
+
+    async def _download_and_prepare_models(self):
+        """Download and prepare required models if they don't exist."""
+        try:
+            # Download cascade classifier if it doesn't exist
+            if not os.path.exists(CASCADE_PATH):
+                url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+                urllib.request.urlretrieve(url, CASCADE_PATH)
+                logger.info(f"Downloaded cascade classifier to {CASCADE_PATH}")
+            
+            # Download and extract dlib face recognition model if it doesn't exist
+            if not os.path.exists(DLIB_FACE_RECOGNITION_MODEL_PATH):
+                import bz2
+                import shutil
+                
+                # Download compressed file
+                compressed_path = DLIB_FACE_RECOGNITION_MODEL_PATH + '.bz2'
+                urllib.request.urlretrieve(DLIB_FACE_RECOGNITION_MODEL_URL, compressed_path)
+                
+                # Extract the file
+                with bz2.BZ2File(compressed_path, 'rb') as source, open(DLIB_FACE_RECOGNITION_MODEL_PATH, 'wb') as dest:
+                    shutil.copyfileobj(source, dest)
+                
+                # Remove compressed file
+                os.remove(compressed_path)
+                logger.info(f"Downloaded and extracted face recognition model to {DLIB_FACE_RECOGNITION_MODEL_PATH}")
+            
+            # Download and extract shape predictor model if it doesn't exist
+            if not os.path.exists(DLIB_SHAPE_PREDICTOR_PATH):
+                import bz2
+                import shutil
+                
+                # Download compressed file
+                compressed_path = DLIB_SHAPE_PREDICTOR_PATH + '.bz2'
+                urllib.request.urlretrieve(DLIB_SHAPE_PREDICTOR_URL, compressed_path)
+                
+                # Extract the file
+                with bz2.BZ2File(compressed_path, 'rb') as source, open(DLIB_SHAPE_PREDICTOR_PATH, 'wb') as dest:
+                    shutil.copyfileobj(source, dest)
+                
+                # Remove compressed file
+                os.remove(compressed_path)
+                logger.info(f"Downloaded and extracted shape predictor model to {DLIB_SHAPE_PREDICTOR_PATH}")
+                
+        except Exception as e:
+            logger.error(f"Error downloading models: {e}")
+            raise
+
+    async def _init_detector(self) -> cv2.CascadeClassifier:
         """Initialize face detector using OpenCV Haar Cascade"""
         try:
-            cascade_path = self.config.FACE_DETECTION_CASCADE_PATH
-            detector = cv2.CascadeClassifier(cascade_path)
+            detector = cv2.CascadeClassifier(CASCADE_PATH)
             if detector.empty():
-                raise ValueError(f"Failed to load cascade classifier from {cascade_path}")
+                raise ValueError(f"Failed to load cascade classifier from {CASCADE_PATH}")
             return detector
         except Exception as e:
             logger.error(f"Error initializing face detector: {e}")
             raise
 
-    def _init_encoder(self) -> 'dlib.face_recognition_model_v1':
+    async def _init_encoder(self) -> 'dlib.face_recognition_model_v1':
         """Initialize face encoder using dlib"""
         try:
-            model_path = self.config.FACE_ENCODING_DLIB_MODEL_PATH
-            return dlib.face_recognition_model_v1(model_path)
+            return dlib.face_recognition_model_v1(DLIB_FACE_RECOGNITION_MODEL_PATH)
         except Exception as e:
             logger.error(f"Error initializing face encoder: {e}")
             raise
 
-    def _init_landmark_detector(self) -> 'dlib.shape_predictor':
+    async def _init_landmark_detector(self) -> 'dlib.shape_predictor':
         """Initialize facial landmark detection using dlib"""
         try:
-            model_path = "/app/models/shape_predictor_68_face_landmarks.dat"
-            return dlib.shape_predictor(model_path)
+            return dlib.shape_predictor(DLIB_SHAPE_PREDICTOR_PATH)
         except Exception as e:
             logger.error(f"Failed to load landmark model: {str(e)}")
             raise
 
-    @handle_exceptions(logger_func=logger.error)
+    async def _load_model(self):
+        """Load face recognition model."""
+        # TODO: Implement model loading
+        pass
+
+    @handle_errors
     @measure_performance()
     async def process_image(self,
                           image_data: Union[str, np.ndarray],
@@ -280,111 +409,98 @@ class FaceRecognitionSystem:
             logger.error(f"Image decoding failed: {str(e)}")
             raise
 
-    @handle_exceptions(logger_func=logger.error)
+    @handle_errors
     @measure_performance()
-    async def detect_faces(self, 
-                         frames: Union[np.ndarray, List[np.ndarray]],
-                         options: Optional[Dict[str, Any]] = None) -> List[FaceDetection]:
-        """
-        Detect faces in one or more frames with optimized batch processing and distance estimation
-        """
-        if isinstance(frames, np.ndarray):
-            frames = [frames]
-            
-        detections = []
-        min_confidence = options.get('min_confidence', 
-                                   self.config.face_detection_min_confidence)
+    async def detect_faces(self, image: np.ndarray) -> List[Dict[str, Any]]:
+        """Detect faces in image."""
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # Process frames in batches
-        for batch_idx in range(0, len(frames), self._batch_size):
-            batch_frames = frames[batch_idx:batch_idx + self._batch_size]
-            
-            # CPU detection
-            batch_grays = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
-                         for frame in batch_frames]
-            
-            for idx, (frame, gray) in enumerate(zip(batch_frames, batch_grays)):
-                faces = self._detector.detectMultiScale(
-                    gray,
-                    scaleFactor=self._scale_factor,
-                    minNeighbors=5,
-                    minSize=self._min_face_size
-                )
-                
-                for (x, y, w, h) in faces:
-                    face_image = frame[y:y+h, x:x+w]
-                    confidence = self._compute_detection_confidence(face_image)
-                    
-                    if confidence > min_confidence:
-                        distance = self._estimate_distance(w)
-                        detections.append(FaceDetection(
-                            bbox=(x, y, w, h),
-                            confidence=confidence,
-                            frame_index=batch_idx + idx,
-                            face_image=face_image,
-                            distance=distance
-                        ))
-                    
-        logger.info(f"Detected {len(detections)} faces in {len(frames)} frames")
-        return detections
-
-    def _process_detections(self,
-                          detections: torch.Tensor,
-                          image_shape: Tuple[int, int, int]) -> List[Dict[str, Any]]:
-        """Process raw detections into face information"""
-        faces = []
-        height, width = image_shape[:2]
+        # Detect faces
+        faces = self._detector.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30)
+        )
         
-        # Convert detections to face information
-        for detection in detections[0]:
-            confidence = float(detection[4])
-            if confidence < self.config.face_detection_min_confidence:
-                continue
-                
-            # Convert normalized coordinates to pixel coordinates
-            bbox = [
-                int(detection[0] * width),   # x1
-                int(detection[1] * height),  # y1
-                int(detection[2] * width),   # x2
-                int(detection[3] * height)   # y2
-            ]
-            
-            # Add landmarks if available
-            landmarks = None
-            if len(detection) > 5:
-                landmarks = []
-                for i in range(5, 15, 2):
-                    x = int(detection[i] * width)
-                    y = int(detection[i + 1] * height)
-                    landmarks.append([x, y])
-                    
-            faces.append({
-                "bbox": bbox,
-                "confidence": confidence,
-                "landmarks": landmarks
+        # Convert to list of face objects
+        face_list = []
+        for (x, y, w, h) in faces:
+            face_list.append({
+                'bbox': (x, y, w, h),
+                'confidence': None  # Haar cascade doesn't provide confidence
             })
             
-        return faces
+        return face_list
 
-    @lru_cache(maxsize=1000)
-    def _compute_detection_confidence(self, face_image: np.ndarray) -> float:
-        """Compute confidence score for detected face"""
+    @handle_errors
+    @measure_performance()
+    async def get_face_encoding(self, image: np.ndarray, face_bbox: Tuple[int, int, int, int]) -> np.ndarray:
+        """Get face encoding."""
+        # TODO: Implement face encoding
+        pass
+
+    @handle_errors
+    @measure_performance()
+    async def verify_face(self, image: np.ndarray, username: str) -> Optional[Dict[str, Any]]:
+        """Verify face against stored encoding."""
         try:
-            # Convert image to tensor
-            face_tensor = self._preprocess_image(face_image)
+            # Detect faces
+            faces = await self.detect_faces(image)
+            if not faces:
+                return None
             
-            # Use model confidence if available
-            if hasattr(self._encoder, 'get_confidence'):
-                with torch.no_grad():
-                    confidence = self._encoder.get_confidence(face_tensor)
-                return float(confidence)
-                
-            # Fallback to basic metric
-            return 0.95
+            # Get encoding for largest face
+            largest_face = max(faces, key=lambda f: f['bbox'][2] * f['bbox'][3])
+            encoding = await self.get_face_encoding(image, largest_face['bbox'])
+            
+            # Compare with stored encoding
+            stored_encoding = self._encoding_cache.get(username)
+            if stored_encoding is None:
+                # TODO: Load from database
+                return None
+            
+            similarity = self._compare_encodings(encoding, stored_encoding)
+            
+            return {
+                'match': similarity > 0.9,
+                'confidence': float(similarity),
+                'timestamp': datetime.utcnow().isoformat()
+            }
             
         except Exception as e:
-            logger.error(f"Error computing detection confidence: {e}")
-            return 0.0
+            logger.error(f"Face verification failed: {e}")
+            return None
+
+    @handle_errors
+    @measure_performance()
+    async def register_face(self, image: np.ndarray, user_id: int) -> bool:
+        """Register face encoding."""
+        try:
+            # Detect faces
+            faces = await self.detect_faces(image)
+            if not faces:
+                return False
+            
+            # Get encoding for largest face
+            largest_face = max(faces, key=lambda f: f['bbox'][2] * f['bbox'][3])
+            encoding = await self.get_face_encoding(image, largest_face['bbox'])
+            
+            # Store encoding
+            self._encoding_cache[user_id] = encoding
+            # TODO: Store in database
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Face registration failed: {e}")
+            return False
+
+    def _compare_encodings(self, encoding1: np.ndarray, encoding2: np.ndarray) -> float:
+        """Compare two face encodings."""
+        # TODO: Implement encoding comparison
+        pass
 
     def _preprocess_face(self, face_img: np.ndarray) -> Optional[torch.Tensor]:
         """Preprocess face image"""
@@ -552,7 +668,7 @@ class FaceRecognitionSystem:
         current_avg = self._stats['average_quality']
         self._stats['average_quality'] = (current_avg * (n - 1) + quality) / n
 
-    @handle_exceptions(logger_func=logger.error)
+    @handle_errors
     @measure_performance()
     async def encode_faces(self, detections: List[FaceDetection]) -> List[np.ndarray]:
         """Generate encodings for detected faces with optimized GPU acceleration"""
@@ -605,7 +721,7 @@ class FaceRecognitionSystem:
         
         return encodings
 
-    @handle_exceptions(logger_func=logger.error)
+    @handle_errors
     @measure_performance()
     async def find_matches(self, encoding: np.ndarray) -> List[FaceMatch]:
         """
@@ -642,67 +758,6 @@ class FaceRecognitionSystem:
             # Sort by confidence
             matches.sort(key=lambda x: x.confidence, reverse=True)
             return matches
-
-    @handle_exceptions(logger_func=logger.error)
-    @measure_performance()
-    async def verify_face(self, frame: np.ndarray) -> Optional[Dict]:
-        """
-        Complete face verification pipeline with distance-based activation
-        
-        Args:
-            frame: Image frame containing face
-            
-        Returns:
-            Dict with match and activation status if verified, None otherwise
-        """
-        # Detect face
-        detections = await self.detect_faces(frame)
-        if not detections:
-            await self.event_manager.publish('face_not_detected', {'frame': frame})
-            return None
-            
-        # Use best detection
-        best_detection = max(detections, key=lambda d: d.confidence)
-        
-        # Generate encoding
-        encodings = await self.encode_faces([best_detection])
-        if not encodings:
-            await self.event_manager.publish('face_encoding_failed', 
-                                          {'detection': best_detection})
-            return None
-            
-        # Find matches
-        matches = await self.find_matches(encodings[0])
-        
-        if matches:
-            best_match = matches[0]
-            distance = best_detection.distance
-
-            # Determine activation status based on distance
-            can_activate = (distance is not None and 
-                          distance <= self._activation_range)
-            
-            # Add detection info to match result
-            result = {
-                'match': best_match,
-                'distance': distance,
-                'can_activate': can_activate,
-                'bbox': best_detection.bbox
-            }
-            
-            # Publish appropriate event based on distance
-            if distance <= self._activation_range:
-                await self.event_manager.publish('face_verified_activation_range', result)
-            elif distance <= self._long_range_threshold:
-                await self.event_manager.publish('face_verified_long_range', result)
-            else:
-                await self.event_manager.publish('face_verified_out_of_range', result)
-            
-            return result
-            
-        await self.event_manager.publish('face_unverified', 
-                                       {'encoding': encodings[0]})
-        return None
 
     def clear_caches(self) -> None:
         """Clear all internal caches"""

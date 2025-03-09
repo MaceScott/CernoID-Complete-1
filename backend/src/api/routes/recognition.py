@@ -9,22 +9,24 @@ import base64
 import numpy as np
 import cv2
 
-from ..dependencies import get_current_user, get_recognition_service, get_service
-from ..schemas import (
+from core.auth.dependencies import get_current_user
+from core.face_recognition import FaceRecognitionSystem, get_recognition_service
+from core.utils.errors import handle_errors
+from core.security.middleware import SecurityMiddleware
+from core.auth.manager import AuthManager as AuthService
+from core.logging import get_logger
+
+from api.schemas import (
     RecognitionResult,
-    ErrorResponse
+    ErrorResponse,
+    PersonCreate,
+    PersonResponse
 )
-from src.core.utils.errors import handle_errors
-from src.core.security.middleware import SecurityMiddleware
-from src.core.face_recognition.core import FaceRecognitionSystem
-from ..schemas import PersonCreate, PersonResponse
-from ..schemas.recognition import (
+from api.schemas.recognition import (
     FaceDetectionResponse,
     FaceEncodingResponse,
     MatchResult
 )
-from src.core.auth.manager import AuthManager as AuthService
-from src.core.logging import get_logger
 
 router = APIRouter(prefix="/recognition", tags=["recognition"])
 logger = get_logger(__name__)

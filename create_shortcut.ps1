@@ -1,7 +1,1 @@
-$WshShell = New-Object -comObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut("C:\Users\maces\OneDrive\Desktop\CernoID.lnk")
-$Shortcut.TargetPath = "C:\Users\maces\CernoID-Complete-1\start_cernoid.bat"
-$Shortcut.WorkingDirectory = "C:\Users\maces\CernoID-Complete-1"
-$Shortcut.WindowStyle = 1  # Normal window
-$Shortcut.Description = "CernoID Security System"
-$Shortcut.Save() 
+ = New-Object -ComObject WScript.Shell;  = .CreateShortcut(" C:\Users\maces\OneDrive\Desktop\CernoID.lnk\); .TargetPath = \C:\Users\maces\CernoID-Complete-1\scripts\start\start_cernoid.bat\; .WorkingDirectory = \C:\Users\maces\CernoID-Complete-1\; .IconLocation = \C:\Users\maces\CernoID-Complete-1\frontend\public\favicon.ico\; .Save()

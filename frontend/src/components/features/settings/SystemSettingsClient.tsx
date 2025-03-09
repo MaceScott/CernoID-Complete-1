@@ -21,13 +21,19 @@ import {
   Switch,
   FormControlLabel,
   TextField,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   Storage as StorageIcon,
   Memory as MemoryIcon,
   Timer as TimerIcon,
-  Update as UpdateIcon
+  Update as UpdateIcon,
+  Backup as BackupIcon,
+  Settings as SettingsIcon
 } from '@mui/icons-material';
 import { useAuth } from '@/hooks/useAuth';
 import { BaseFrame } from '@/desktop/BaseFrame';
@@ -46,6 +52,10 @@ interface SystemStatus {
     total: number;
     used: number;
     free: number;
+    recordings: number;
+    logs: number;
+    backups: number;
+    lastBackup: string;
   };
   uptime: number;
   lastUpdate: string;
@@ -59,6 +69,12 @@ interface MaintenanceLog {
   status: 'success' | 'failed';
 }
 
+interface BackupConfig {
+  schedule: string;
+  retention: number;
+  location: string;
+}
+
 export function SystemSettingsClient() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -66,11 +82,26 @@ export function SystemSettingsClient() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     cpu: { usage: 0, temperature: 0 },
     memory: { total: 0, used: 0, free: 0 },
-    storage: { total: 0, used: 0, free: 0 },
+    storage: { 
+      total: 0, 
+      used: 0, 
+      free: 0,
+      recordings: 0,
+      logs: 0,
+      backups: 0,
+      lastBackup: new Date().toISOString()
+    },
     uptime: 0,
     lastUpdate: new Date().toISOString()
   });
   const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>([]);
+  const [backupConfig, setBackupConfig] = useState<BackupConfig>({
+    schedule: '0 0 * * *',
+    retention: 7,
+    location: '/backups'
+  });
+  const [backupDialog, setBackupDialog] = useState(false);
+  const [backupProgress, setBackupProgress] = useState(0);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [retentionDays, setRetentionDays] = useState('30');
   const [updating, setUpdating] = useState(false);
@@ -78,70 +109,118 @@ export function SystemSettingsClient() {
   useEffect(() => {
     fetchSystemStatus();
     fetchMaintenanceLogs();
+    fetchBackupConfig();
     const interval = setInterval(fetchSystemStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
   const fetchSystemStatus = async () => {
     try {
-      // In a real app, this would be an API call
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/metrics`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch system metrics');
+      }
+      
+      const metrics = await response.json();
+      const storageResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/storage`, {
+        credentials: 'include',
+      });
+      
+      if (!storageResponse.ok) {
+        throw new Error('Failed to fetch storage metrics');
+      }
+      
+      const storage = await storageResponse.json();
+      
       setSystemStatus({
-        cpu: { usage: 45, temperature: 65 },
+        cpu: { 
+          usage: metrics.cpu, 
+          temperature: 65 // Placeholder - implement actual temperature monitoring
+        },
         memory: {
-          total: 16384,
-          used: 8192,
-          free: 8192
+          total: metrics.memory.total,
+          used: metrics.memory.used,
+          free: metrics.memory.free
         },
         storage: {
-          total: 1024000,
-          used: 512000,
-          free: 512000
+          total: storage.total,
+          used: storage.used,
+          free: storage.available,
+          recordings: storage.recordingsSize,
+          logs: storage.logsSize,
+          backups: storage.backupSize,
+          lastBackup: storage.lastBackup
         },
-        uptime: 345600,
-        lastUpdate: new Date().toISOString()
+        uptime: metrics.uptime,
+        lastUpdate: metrics.lastUpdate
       });
       setLoading(false);
     } catch (err) {
-      setError('Failed to fetch system status');
+      setError(err instanceof Error ? err.message : 'Failed to fetch system status');
       setLoading(false);
     }
   };
 
   const fetchMaintenanceLogs = async () => {
     try {
-      // In a real app, this would be an API call
-      setMaintenanceLogs([
-        {
-          id: '1',
-          timestamp: new Date().toISOString(),
-          type: 'System Update',
-          details: 'Updated to version 1.2.3',
-          status: 'success'
-        },
-        {
-          id: '2',
-          timestamp: new Date(Date.now() - 86400000).toISOString(),
-          type: 'Backup',
-          details: 'Daily backup completed',
-          status: 'success'
-        }
-      ]);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/logs`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch maintenance logs');
+      }
+      
+      const logs = await response.json();
+      setMaintenanceLogs(logs);
     } catch (err) {
       console.error('Failed to fetch maintenance logs:', err);
     }
   };
 
-  const handleSystemUpdate = async () => {
+  const fetchBackupConfig = async () => {
     try {
-      setUpdating(true);
-      // In a real app, this would be an API call
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/backup-config`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch backup config');
+      }
+      
+      const config = await response.json();
+      setBackupConfig(config);
+    } catch (err) {
+      console.error('Failed to fetch backup config:', err);
+    }
+  };
+
+  const handleBackup = async () => {
+    try {
+      setBackupProgress(0);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/backup`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Backup failed');
+      }
+      
+      // Simulate backup progress
+      for (let i = 0; i <= 100; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setBackupProgress(i);
+      }
+      
+      setBackupDialog(false);
       await fetchSystemStatus();
       await fetchMaintenanceLogs();
     } catch (err) {
-      setError('Failed to update system');
-    } finally {
-      setUpdating(false);
+      setError(err instanceof Error ? err.message : 'Backup failed');
     }
   };
 
@@ -175,9 +254,19 @@ export function SystemSettingsClient() {
     <BaseFrame title="System Settings">
       <Container maxWidth="xl">
         <Box sx={{ mt: 4 }}>
-          <Typography variant="h4" component="h1" gutterBottom>
-            System Settings
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h4" component="h1" gutterBottom>
+              System Settings
+            </Typography>
+            <Button 
+              variant="contained" 
+              color="primary"
+              startIcon={<BackupIcon />}
+              onClick={() => setBackupDialog(true)}
+            >
+              Create Backup
+            </Button>
+          </Box>
 
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
@@ -237,6 +326,32 @@ export function SystemSettingsClient() {
                             value={(systemStatus.storage.used / systemStatus.storage.total) * 100}
                             sx={{ height: 10, borderRadius: 5 }}
                           />
+                          <Grid container spacing={2} sx={{ mt: 2 }}>
+                            <Grid item xs={4}>
+                              <Typography variant="subtitle2" color="textSecondary">
+                                Recordings
+                              </Typography>
+                              <Typography variant="body1">
+                                {formatBytes(systemStatus.storage.recordings)}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={4}>
+                              <Typography variant="subtitle2" color="textSecondary">
+                                Logs
+                              </Typography>
+                              <Typography variant="body1">
+                                {formatBytes(systemStatus.storage.logs)}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={4}>
+                              <Typography variant="subtitle2" color="textSecondary">
+                                Backups
+                              </Typography>
+                              <Typography variant="body1">
+                                {formatBytes(systemStatus.storage.backups)}
+                              </Typography>
+                            </Grid>
+                          </Grid>
                         </CardContent>
                       </Card>
                     </Grid>
@@ -292,12 +407,11 @@ export function SystemSettingsClient() {
                   <Box sx={{ mt: 2 }}>
                     <Button
                       variant="contained"
-                      startIcon={<UpdateIcon />}
-                      fullWidth
-                      onClick={handleSystemUpdate}
+                      color="primary"
                       disabled={updating}
+                      onClick={() => fetchSystemStatus()}
                     >
-                      {updating ? 'Updating...' : 'Check for Updates'}
+                      Update Now
                     </Button>
                   </Box>
                 </Paper>
@@ -317,21 +431,91 @@ export function SystemSettingsClient() {
                           secondary={`${new Date(log.timestamp).toLocaleString()} - ${log.details}`}
                         />
                         <ListItemSecondaryAction>
-                          <Alert
-                            severity={log.status === 'success' ? 'success' : 'error'}
-                            sx={{ py: 0 }}
+                          <Typography
+                            color={log.status === 'success' ? 'success.main' : 'error.main'}
                           >
                             {log.status}
-                          </Alert>
+                          </Typography>
                         </ListItemSecondaryAction>
                       </ListItem>
                     ))}
                   </List>
                 </Paper>
               </Grid>
+
+              {/* Backup Configuration */}
+              <Grid item xs={12}>
+                <Paper sx={{ p: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Backup Configuration
+                  </Typography>
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Backup Schedule (cron)"
+                        value={backupConfig.schedule}
+                        onChange={(e) => setBackupConfig({ ...backupConfig, schedule: e.target.value })}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Retention Days"
+                        value={backupConfig.retention}
+                        onChange={(e) => setBackupConfig({ ...backupConfig, retention: parseInt(e.target.value) })}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        label="Backup Location"
+                        value={backupConfig.location}
+                        onChange={(e) => setBackupConfig({ ...backupConfig, location: e.target.value })}
+                      />
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
             </Grid>
           )}
         </Box>
+
+        {/* Backup Dialog */}
+        <Dialog open={backupDialog} onClose={() => setBackupDialog(false)}>
+          <DialogTitle>Create System Backup</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+              This will create a backup of all system data including:
+              <ul>
+                <li>User data and permissions</li>
+                <li>Face recognition models</li>
+                <li>System configurations</li>
+                <li>Access logs</li>
+              </ul>
+            </Typography>
+            {backupProgress > 0 && (
+              <Box sx={{ mt: 2 }}>
+                <LinearProgress variant="determinate" value={backupProgress} />
+                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                  Progress: {backupProgress}%
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setBackupDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={handleBackup} 
+              variant="contained" 
+              color="primary"
+              disabled={backupProgress > 0}
+            >
+              Start Backup
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Container>
     </BaseFrame>
   );

@@ -7,11 +7,28 @@ set "LOGDIR=logs"
 if not exist "%LOGDIR%" mkdir "%LOGDIR%"
 set "LOGFILE=%LOGDIR%\cernoid.log"
 
-:: Log function
-call :LOG "Starting CernoID Security System"
+:: Load environment variables
+if exist ".env" (
+    for /F "tokens=*" %%i in (.env) do (
+        set %%i
+    )
+)
+
+:: Determine environment and set URLs
+if "%NODE_ENV%"=="production" (
+    set "FRONTEND_URL=%PROD_FRONTEND_URL%"
+    set "BACKEND_URL=%PROD_BACKEND_URL%"
+) else (
+    set "FRONTEND_URL=%DEV_FRONTEND_URL%"
+    set "BACKEND_URL=%DEV_BACKEND_URL%"
+)
+
+:: Log startup
+call :LOG "Starting CernoID Security System in %NODE_ENV% mode"
+echo Starting CernoID in %NODE_ENV% mode...
 
 :: Change to project directory
-cd /d "C:\Users\maces\CernoID-Complete-1"
+cd /d "%~dp0..\.."
 if errorlevel 1 (
     call :LOG "Error: Failed to change to project directory"
     echo Failed to locate CernoID directory.
@@ -121,9 +138,9 @@ if !health_checks! lss 15 (
 :SERVICES_READY
 :: Verify API connectivity
 echo Testing API connectivity...
-curl -s http://localhost:8000/health >nul
+curl -s "%BACKEND_URL%/health" >nul
 if errorlevel 1 (
-    call :LOG "Error: Backend API not responding"
+    call :LOG "Error: Backend API not responding at %BACKEND_URL%"
     echo Backend API is not responding.
     echo Checking backend logs:
     docker compose logs backend --tail=50
@@ -133,9 +150,9 @@ if errorlevel 1 (
 
 :: Verify frontend is responding
 echo Testing frontend accessibility...
-curl -s http://localhost:3000 >nul
+curl -s "%FRONTEND_URL%" >nul
 if errorlevel 1 (
-    call :LOG "Error: Frontend not responding"
+    call :LOG "Error: Frontend not responding at %FRONTEND_URL%"
     echo Frontend is not responding.
     echo Checking frontend logs:
     docker compose logs frontend --tail=50
@@ -148,34 +165,55 @@ call :LOG "All services started successfully"
 echo.
 echo CernoID is ready!
 echo.
-echo Frontend: http://localhost:3000
-echo Backend API: http://localhost:8000
+echo Frontend: %FRONTEND_URL%
+echo Backend API: %BACKEND_URL%
+echo Environment: %NODE_ENV%
 echo.
 
-:: Create desktop shortcut to this script
-echo Creating desktop shortcut...
-powershell -Command "$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut($WshShell.SpecialFolders('Desktop') + '\CernoID.lnk'); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = '%~dp0\..\..\frontend\public\favicon.ico'; $Shortcut.Save()"
+:: Wait longer for services to be fully ready and verify they're responding
+echo Waiting for services to be fully initialized...
+timeout /t 10 /nobreak >nul
 
-:: Open in default browser (directly to login)
-timeout /t 2 >nul
-start "" "http://localhost:3000/login"
-
-:: Keep window open to show logs and allow clean shutdown
-echo Press any key to shut down CernoID...
-pause >nul
-
-:: Clean shutdown
-call :LOG "Shutting down CernoID"
-echo Shutting down CernoID...
-docker compose down
+:: Double check frontend is responding
+echo Verifying frontend access...
+curl -v "%FRONTEND_URL%/login" >nul 2>&1
 if errorlevel 1 (
-    call :LOG "Warning: Clean shutdown failed"
-    echo Warning: Some services may not have shut down properly.
+    echo Frontend is not responding. Checking logs...
+    docker compose logs frontend --tail=50
+    pause
+    exit /b 1
 )
 
+:: Open in default browser (directly to login)
+echo Opening CernoID in your browser...
+start "" "%FRONTEND_URL%/login"
+
+:: Keep window open with status display
 echo.
-echo CernoID has been shut down.
-timeout /t 3 >nul
+echo ========================================
+echo CernoID Status
+echo ========================================
+echo.
+echo Services are running! Do not close this window.
+echo The application will remain active as long as
+echo this window stays open.
+echo.
+echo To access CernoID:
+echo   Login page: %FRONTEND_URL%/login
+echo   API: %BACKEND_URL%
+echo   Environment: %NODE_ENV%
+echo.
+echo To stop CernoID, close this window.
+echo ========================================
+
+:: Show running containers
+echo.
+echo Current running services:
+docker compose ps
+echo.
+
+:: Keep the window open
+pause
 exit /b 0
 
 :LOG

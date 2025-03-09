@@ -1,107 +1,177 @@
-"""Database connection management."""
-from typing import Optional, Dict, Any
-from sqlalchemy import create_engine, Engine
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import QueuePool
-from contextlib import contextmanager
+"""Database connection pool."""
+import asyncio
+from typing import Optional, AsyncGenerator, Dict, Any
+import asyncpg
+from asyncpg.pool import Pool
+from contextlib import asynccontextmanager
 from fastapi import Depends
-from src.core.logging import get_logger
-from src.core.config import settings
-from src.core.base import BaseComponent
+import os
+
+from core.logging import get_logger
+from core.config import Settings
+from core.utils.errors import handle_errors
 
 logger = get_logger(__name__)
 
-class DatabasePool(BaseComponent):
+class DatabasePool:
     """Database connection pool manager."""
-
-    def __init__(self) -> None:
+    
+    def __init__(self):
         """Initialize database pool."""
-        super().__init__()
-        self._engine = None
-        self._session_factory = None
-
-    def _initialize_engine(self) -> None:
-        """Initialize database engine with connection pool."""
-        try:
-            self._engine = create_engine(
-                settings.DATABASE_URL,
-                echo=False,
-                future=True,
-                poolclass=QueuePool,
-                pool_pre_ping=True,
-                pool_size=5,
-                max_overflow=10,
-            )
-            self._session_factory = sessionmaker(
-                bind=self._engine,
-                expire_on_commit=False,
-                autocommit=False,
-                autoflush=False
-            )
-            logger.info("Database engine initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize database engine: {e}")
-            raise
-
-    @property
-    def engine(self) -> Engine:
-        """Get database engine instance."""
-        if not self._engine:
-            self._initialize_engine()
-        return self._engine
-
-    @contextmanager
-    def get_session(self) -> Session:
-        """Create new database session."""
-        if not self._session_factory:
-            self._initialize_engine()
+        self._pool: Optional[Pool] = None
+        self._settings = Settings()
+        self._is_connected = False
+        self._last_error: Optional[str] = None
+        self._stats: Dict[str, Any] = {
+            'connections_created': 0,
+            'connections_closed': 0,
+            'active_connections': 0,
+            'failed_connections': 0
+        }
+        self._in_memory = os.getenv('ENVIRONMENT') == 'development'
+    
+    @handle_errors
+    async def create_pool(self) -> None:
+        """Create database connection pool."""
+        if self._pool is not None:
+            logger.warning("Database pool already exists")
+            return
         
-        session = self._session_factory()
+        if self._in_memory:
+            logger.info("Running in development mode with in-memory storage")
+            self._is_connected = True
+            return
+            
         try:
-            yield session
-            session.commit()
+            self._pool = await asyncpg.create_pool(
+                host=self._settings.DB_HOST,
+                port=self._settings.DB_PORT,
+                user=self._settings.DB_USER,
+                password=self._settings.DB_PASSWORD,
+                database=self._settings.DB_NAME,
+                min_size=5,
+                max_size=20,
+                command_timeout=60,
+                server_settings={
+                    'application_name': 'CernoID',
+                    'timezone': 'UTC'
+                }
+            )
+            self._is_connected = True
+            self._last_error = None
+            self._stats['connections_created'] += 1
+            logger.info("Database pool created successfully")
         except Exception as e:
-            session.rollback()
+            self._is_connected = False
+            self._last_error = str(e)
+            self._stats['failed_connections'] += 1
+            logger.error(f"Failed to create database pool: {str(e)}")
+            if not self._in_memory:
+                raise
+    
+    @handle_errors
+    async def close(self) -> None:
+        """Close database connection pool."""
+        if self._in_memory:
+            return
+            
+        if self._pool is None:
+            logger.warning("No database pool to close")
+            return
+        
+        try:
+            await self._pool.close()
+            self._pool = None
+            self._is_connected = False
+            self._stats['connections_closed'] += 1
+            logger.info("Database pool closed")
+        except Exception as e:
+            self._last_error = str(e)
+            logger.error(f"Error closing database pool: {str(e)}")
             raise
-        finally:
-            session.close()
+    
+    @property
+    def pool(self) -> Pool:
+        """Get database pool."""
+        if self._in_memory:
+            return None
+        if self._pool is None:
+            raise RuntimeError("Database pool not initialized")
+        return self._pool
+    
+    @handle_errors
+    async def is_connected(self) -> bool:
+        """Check if database is connected and responding."""
+        if self._in_memory:
+            return True
+            
+        if self._pool is None:
+            return False
+            
+        try:
+            # Try to execute a simple query
+            async with self._pool.acquire() as conn:
+                await conn.execute('SELECT 1')
+            self._is_connected = True
+            return True
+        except Exception as e:
+            self._is_connected = False
+            self._last_error = str(e)
+            logger.error(f"Database connection check failed: {str(e)}")
+            return False
+    
+    @handle_errors
+    async def get_status(self) -> Dict[str, Any]:
+        """Get database connection status."""
+        if self._in_memory:
+            return {
+                'is_connected': True,
+                'last_error': None,
+                'stats': self._stats,
+                'pool_size': 0,
+                'min_size': 0,
+                'max_size': 0,
+                'mode': 'in-memory'
+            }
+            
+        is_connected = await self.is_connected()
+        
+        if self._pool is not None:
+            self._stats['active_connections'] = len(self._pool._holders)
+        
+        return {
+            'is_connected': is_connected,
+            'last_error': self._last_error,
+            'stats': self._stats,
+            'pool_size': len(self._pool._holders) if self._pool else 0,
+            'min_size': 5,
+            'max_size': 20,
+            'mode': 'postgres'
+        }
+    
+    @asynccontextmanager
+    async def connection(self):
+        """Get database connection from pool."""
+        if self._in_memory:
+            yield None
+            return
+            
+        if self._pool is None:
+            raise RuntimeError("Database pool not initialized")
+        
+        try:
+            async with self._pool.acquire() as conn:
+                yield conn
+        except Exception as e:
+            self._last_error = str(e)
+            logger.error(f"Error acquiring database connection: {str(e)}")
+            raise
 
-    def dispose(self) -> None:
-        """Dispose database engine."""
-        if self._engine:
-            self._engine.dispose()
-            logger.info("Database engine disposed")
-
-    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Execute a database query."""
-        with self.get_session() as session:
-            result = session.execute(query, params or {})
-            return result
-
-    def fetch_one(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Fetch a single row from the database."""
-        with self.get_session() as session:
-            result = session.execute(query, params or {})
-            row = result.fetchone()
-            return dict(row) if row else None
-
-    def fetch_all(self, query: str, params: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
-        """Fetch all rows from the database."""
-        with self.get_session() as session:
-            result = session.execute(query, params or {})
-            rows = result.fetchall()
-            return [dict(row) for row in rows]
-
-    def execute_many(self, query: str, params_list: list[Dict[str, Any]]) -> None:
-        """Execute multiple database queries."""
-        with self.get_session() as session:
-            for params in params_list:
-                session.execute(query, params)
-
-# Create a global database pool instance
+# Create global database pool instance
 db_pool = DatabasePool()
 
-def get_db() -> Session:
-    """Get database session dependency."""
-    with db_pool.get_session() as session:
-        yield session 
+async def get_db() -> AsyncGenerator[Pool, None]:
+    """Get database connection dependency."""
+    if not db_pool._in_memory and db_pool._pool is None:
+        await db_pool.create_pool()
+    yield db_pool.pool 

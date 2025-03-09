@@ -1,0 +1,9 @@
+{
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/api/security/access-points/route": "app/api/security/access-points/route.js",
+  "/api/security/alerts/route": "app/api/security/alerts/route.js",
+  "/api/security/cameras/route": "app/api/security/cameras/route.js",
+  "/api/security/events/route": "app/api/security/events/route.js",
+  "/api/security/permissions/route": "app/api/security/permissions/route.js",
+  "/api/security/zones/route": "app/api/security/zones/route.js"
+}

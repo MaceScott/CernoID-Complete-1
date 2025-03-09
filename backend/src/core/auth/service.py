@@ -1,68 +1,74 @@
+"""Authentication service."""
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from src.core.config.settings import get_settings
-from src.core.database.models import User
-from src.api.schemas.auth import UserCreate, TokenResponse
+from core.config import Settings
+from core.database.models.models import User
+from core.auth.schemas import UserCreate, UserRead
 
-settings = get_settings()
+settings = Settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class AuthService:
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    """Authentication service."""
+
+    def __init__(self):
+        """Initialize auth service."""
+        self.secret_key = settings.secret_key
+        self.algorithm = settings.algorithm
+        self.access_token_expire_minutes = settings.access_token_expire_minutes
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        """Verify password."""
         return pwd_context.verify(plain_password, hashed_password)
 
     def get_password_hash(self, password: str) -> str:
+        """Get password hash."""
         return pwd_context.hash(password)
 
-    def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
-        to_encode = data.copy()
-        if expires_delta:
-            expire = datetime.utcnow() + expires_delta
-        else:
-            expire = datetime.utcnow() + timedelta(minutes=15)
-        to_encode.update({"exp": expire})
-        encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-        return encoded_jwt
-
     async def authenticate_user(self, username: str, password: str) -> Optional[User]:
-        query = select(User).where(User.username == username)
-        result = await self.db.execute(query)
-        user = result.scalar_one_or_none()
+        """Authenticate user."""
+        user = await User.get_by_username(username)
         if not user:
             return None
         if not self.verify_password(password, user.hashed_password):
             return None
         return user
 
-    async def create_user(self, user: UserCreate) -> User:
-        db_user = User(
-            username=user.username,
-            email=user.email,
-            full_name=user.full_name,
-            hashed_password=self.get_password_hash(user.password),
-            is_active=user.is_active,
-            is_superuser=user.is_superuser
+    def create_access_token(self, data: dict) -> str:
+        """Create access token."""
+        to_encode = data.copy()
+        expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
+        to_encode.update({"exp": expire})
+        encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return encoded_jwt
+
+    async def create_user(self, user_data: UserCreate) -> UserRead:
+        """Create new user."""
+        # Check if username exists
+        if await User.get_by_username(user_data.username):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered"
+            )
+        
+        # Check if email exists
+        if await User.get_by_email(user_data.email):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Create user
+        hashed_password = self.get_password_hash(user_data.password)
+        user = User(
+            username=user_data.username,
+            email=user_data.email,
+            hashed_password=hashed_password,
+            is_active=True
         )
-        self.db.add(db_user)
-        await self.db.commit()
-        await self.db.refresh(db_user)
-        return db_user
-
-    async def get_user_by_username(self, username: str) -> Optional[User]:
-        query = select(User).where(User.username == username)
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
-
-    async def get_user_by_email(self, email: str) -> Optional[User]:
-        query = select(User).where(User.email == email)
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none() 
+        await user.save()
+        return UserRead.from_orm(user) 

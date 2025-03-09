@@ -4,26 +4,21 @@ Combines all route modules into a single router.
 """
 
 from fastapi import APIRouter
-from .recognition import router as recognition_router
+from . import auth, recognition, system
 from .persons import router as persons_router
 from .logs import router as logs_router
-from .auth import router as auth_router
 
 # Create main router
 main_router = APIRouter()
 
 # Include all route modules
-main_router.include_router(
-    auth_router,
-    prefix="/auth",
-    tags=["auth"]
-)
+from .auth import router as auth_router
+from .recognition import router as recognition_router
+from .system import router as system_router
 
-main_router.include_router(
-    recognition_router,
-    prefix="/recognition",
-    tags=["recognition"]
-)
+main_router.include_router(auth_router)
+main_router.include_router(recognition_router)
+main_router.include_router(system_router)
 
 main_router.include_router(
     persons_router,

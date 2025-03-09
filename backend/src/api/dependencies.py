@@ -6,11 +6,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.auth.manager import AuthManager
-from src.core.database.models.models import User
-from src.core.database import db_pool
-from src.core.face_recognition.core import FaceRecognitionSystem
-from src.core.logging import get_logger
+from core.auth.manager import AuthManager
+from core.database.models.models import User
+from core.database.connection import db_pool
+from core.face_recognition.core import FaceRecognitionSystem
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -57,12 +57,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         session.close()
 
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+    token: Annotated[str, Depends(oauth2_scheme)]
 ) -> User:
     """Get current authenticated user."""
     try:
-        user = await auth_manager.get_current_user(token, db)
+        user = await auth_manager.verify_token(token)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,8 +82,8 @@ def get_recognition_service() -> FaceRecognitionSystem:
     return recognition_service
 
 async def get_admin_user(
-    current_user: Dict = Depends(get_current_user)
-) -> Dict:
+    current_user: User = Depends(get_current_user)
+) -> User:
     """
     Get current user and verify admin privileges.
     
@@ -92,12 +91,12 @@ async def get_admin_user(
         current_user: Current authenticated user
         
     Returns:
-        Dict containing admin user information
+        User object containing admin user information
         
     Raises:
         HTTPException: If user is not an admin
     """
-    if not current_user.get("is_admin"):
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required"

@@ -4,7 +4,7 @@ import inspect
 from datetime import datetime
 from ..base import BaseComponent
 from ..utils.errors import handle_errors
-from src.core.logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -29,11 +29,13 @@ class EventManager(BaseComponent):
             'errors': 0
         }
 
+    @handle_errors
     async def initialize(self) -> None:
         """Initialize the event manager."""
         self._processing = True
         asyncio.create_task(self._process_events())
         
+    @handle_errors
     async def cleanup(self) -> None:
         """Clean up event manager resources."""
         self._processing = False
@@ -42,17 +44,20 @@ class EventManager(BaseComponent):
         self._wildcards.clear()
         self._middleware.clear()
 
+    @handle_errors
     def subscribe(self, event_type: str, handler: Callable) -> None:
         """Subscribe to an event type."""
         if event_type not in self._handlers:
             self._handlers[event_type] = []
         self._handlers[event_type].append(handler)
         
+    @handle_errors
     def unsubscribe(self, event_type: str, handler: Callable) -> None:
         """Unsubscribe from an event type."""
         if event_type in self._handlers:
             self._handlers[event_type].remove(handler)
             
+    @handle_errors
     async def emit(self, event_type: str, data: Any = None) -> None:
         """Emit an event."""
         event = {
@@ -82,7 +87,7 @@ class EventManager(BaseComponent):
                         
             self._event_queue.task_done()
 
-    @handle_errors(logger=None)
+    @handle_errors
     def on(self,
           event: str,
           handler: Callable,
@@ -109,6 +114,7 @@ class EventManager(BaseComponent):
         # Add handler
         self._handlers[event].append(handler)
 
+    @handle_errors
     def off(self,
             event: str,
             handler: Optional[Callable] = None) -> None:
@@ -130,13 +136,14 @@ class EventManager(BaseComponent):
         else:
             del self._handlers[event]
 
+    @handle_errors
     def use(self, middleware: Callable) -> None:
         """Add event middleware"""
         if not callable(middleware):
             raise ValueError("Middleware must be callable")
         self._middleware.append(middleware)
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def emit_event(self,
                   event: Dict,
                   wait: bool = False) -> None:
@@ -166,11 +173,12 @@ class EventManager(BaseComponent):
             self._stats['emitted'] += 1
             
         except Exception as e:
-            self.logger.error(f"Event emission error: {str(e)}")
+            logger.error(f"Event emission error: {str(e)}")
             self._stats['errors'] += 1
             if self._propagate_errors:
                 raise
 
+    @handle_errors
     async def emit_many(self,
                        events: List[Dict],
                        wait: bool = False) -> None:
@@ -178,6 +186,7 @@ class EventManager(BaseComponent):
         for event_data in events:
             await self.emit_event(event_data, wait)
 
+    @handle_errors
     def once(self,
              event: str,
              handler: Callable) -> None:
@@ -191,6 +200,7 @@ class EventManager(BaseComponent):
                 
         self.on(event, wrapper)
 
+    @handle_errors
     async def get_stats(self) -> Dict[str, Any]:
         """Get event statistics"""
         return self._stats.copy()
@@ -218,7 +228,7 @@ class EventManager(BaseComponent):
                     self._stats['handled'] += 1
                     
                 except Exception as e:
-                    self.logger.error(
+                    logger.error(
                         f"Event handler error: {str(e)}"
                     )
                     self._stats['errors'] += 1
@@ -226,7 +236,7 @@ class EventManager(BaseComponent):
                         raise
                         
         except Exception as e:
-            self.logger.error(f"Event dispatch error: {str(e)}")
+            logger.error(f"Event dispatch error: {str(e)}")
             self._stats['errors'] += 1
             if self._propagate_errors:
                 raise

@@ -5,6 +5,12 @@ import json
 from enum import Enum
 from ..base import BaseComponent
 from ..utils.errors import handle_errors
+import os
+import psutil
+import platform
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 class HealthStatus(str, Enum):
     """Health check status values"""
@@ -15,7 +21,7 @@ class HealthStatus(str, Enum):
     STOPPED = 'stopped'
 
 class HealthCheck(BaseComponent):
-    """Advanced health checking system"""
+    """Health check component."""
     
     def __init__(self, config: dict):
         super().__init__(config)
@@ -28,8 +34,9 @@ class HealthCheck(BaseComponent):
         self._status = HealthStatus.STARTING
         self._dependencies: Dict[str, List[str]] = {}
 
+    @handle_errors
     async def initialize(self) -> None:
-        """Initialize health checker"""
+        """Initialize health check."""
         # Register default checks
         self._register_default_checks()
         
@@ -38,8 +45,9 @@ class HealthCheck(BaseComponent):
             asyncio.create_task(self._run_checks())
         )
 
+    @handle_errors
     async def cleanup(self) -> None:
-        """Cleanup health checker resources"""
+        """Clean up health check resources."""
         self._status = HealthStatus.STOPPED
         self._checks.clear()
         self._results.clear()
@@ -81,7 +89,7 @@ class HealthCheck(BaseComponent):
             if name in deps:
                 deps.remove(name)
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def check_health(self,
                          name: Optional[str] = None) -> Dict:
         """Run health check(s)"""
@@ -316,4 +324,85 @@ class HealthCheck(BaseComponent):
                 'status': HealthStatus.UNHEALTHY,
                 'message': f"Queue error: {str(e)}",
                 'timestamp': datetime.utcnow().isoformat()
-            } 
+            }
+
+    @handle_errors
+    async def get_system_health(self) -> Dict[str, Any]:
+        """Get system health metrics."""
+        try:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            return {
+                'status': 'healthy',
+                'timestamp': datetime.utcnow().isoformat(),
+                'system': {
+                    'platform': platform.system(),
+                    'version': platform.version(),
+                    'processor': platform.processor(),
+                    'python_version': platform.python_version(),
+                },
+                'metrics': {
+                    'cpu': {
+                        'usage_percent': cpu_percent,
+                        'cores': psutil.cpu_count(),
+                    },
+                    'memory': {
+                        'total': memory.total,
+                        'available': memory.available,
+                        'used': memory.used,
+                        'percent': memory.percent,
+                    },
+                    'disk': {
+                        'total': disk.total,
+                        'used': disk.used,
+                        'free': disk.free,
+                        'percent': disk.percent,
+                    },
+                    'process': {
+                        'pid': os.getpid(),
+                        'memory_usage': psutil.Process().memory_info().rss,
+                        'threads': psutil.Process().num_threads(),
+                    }
+                }
+            }
+        except Exception as e:
+            logger.error(f"Failed to get system health: {e}")
+            return {
+                'status': 'error',
+                'timestamp': datetime.utcnow().isoformat(),
+                'error': str(e)
+            }
+
+    @handle_errors
+    async def check_database_health(self) -> Dict[str, Any]:
+        """Check database health."""
+        # TODO: Implement database health check
+        return {
+            'status': 'not_implemented',
+            'message': 'Database health check not implemented'
+        }
+
+    @handle_errors
+    async def check_services_health(self) -> Dict[str, Any]:
+        """Check services health."""
+        # TODO: Implement services health check
+        return {
+            'status': 'not_implemented',
+            'message': 'Services health check not implemented'
+        }
+
+    @handle_errors
+    async def get_full_health_report(self) -> Dict[str, Any]:
+        """Get full health report."""
+        system_health = await self.get_system_health()
+        db_health = await self.check_database_health()
+        services_health = await self.check_services_health()
+        
+        return {
+            'system': system_health,
+            'database': db_health,
+            'services': services_health,
+            'timestamp': datetime.utcnow().isoformat()
+        } 

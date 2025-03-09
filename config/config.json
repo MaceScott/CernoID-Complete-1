@@ -1,0 +1,15 @@
+{ 
+  "database": { 
+    "host": "localhost", 
+    "port": 5432, 
+    "name": "cernoid", 
+    "user": "postgres", 
+    "password": "postgres" 
+  }, 
+  "face_recognition": { 
+    "min_face_size": 64, 
+    "matching_threshold": 0.6, 
+    "cache_size": 1000, 
+    "cache_ttl": 3600 
+  } 
+} 

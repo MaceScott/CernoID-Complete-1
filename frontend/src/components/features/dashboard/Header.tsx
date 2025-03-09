@@ -1,45 +1,34 @@
 'use client';
 
-import React from 'react';
-import {
-  AppBar,
-  Avatar,
-  Box,
-  IconButton,
-  Toolbar,
-  Typography,
-  useTheme
-} from '@mui/material';
-import { ExitToApp } from '@mui/icons-material';
-import { User } from '@/types/user';
+import { AppBar, Toolbar, Typography, IconButton, Box } from '@mui/material';
+import { Menu as MenuIcon, Logout as LogoutIcon } from '@mui/icons-material';
+import { useAuth } from '@/app/providers/AuthProvider';
 
 interface HeaderProps {
-  user: User | null;
-  onLogout: () => void;
+  onMenuClick: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
-  const theme = useTheme();
+export const Header = ({ onMenuClick }: HeaderProps) => {
+  const { logout } = useAuth();
 
   return (
-    <AppBar position="static" sx={{ mb: 3, bgcolor: 'background.paper' }}>
+    <AppBar position="fixed">
       <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: 'text.primary' }}>
-          CernoID Access Control
+        <IconButton
+          color="inherit"
+          aria-label="open drawer"
+          edge="start"
+          onClick={onMenuClick}
+          sx={{ mr: 2 }}
+        >
+          <MenuIcon />
+        </IconButton>
+        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          CernoID Security System
         </Typography>
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="body1" sx={{ color: 'text.primary' }}>
-            {user?.name}
-          </Typography>
-          <Avatar
-            alt={user?.name || 'User'}
-            sx={{ width: 32, height: 32 }}
-          >
-            {user?.name?.[0] || 'U'}
-          </Avatar>
-          <IconButton onClick={onLogout} color="default">
-            <ExitToApp />
+        <Box>
+          <IconButton color="inherit" onClick={logout} title="Logout">
+            <LogoutIcon />
           </IconButton>
         </Box>
       </Toolbar>

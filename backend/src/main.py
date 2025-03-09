@@ -3,94 +3,123 @@ import os
 import sys
 import logging
 from pathlib import Path
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+import uvicorn
+import multiprocessing
 
-from src.core.logging import setup_logging, get_logger
-from src.core.config import Settings
-from src.core.database import db_pool
-from src.api.routes import main_router
+from core.logging import setup_logging, get_logger
+from core.config import Settings
+from core.database.connection import db_pool
+from core.face_recognition import face_recognition_system
+from core.utils.setup import setup_directories, load_environment
+from api.routes import router as api_router
 
-# Initialize logging
-setup_logging(log_level="INFO", log_file="logs/app.log")
-logger = get_logger(__name__)
+def setup_environment(app_dir: Path = None) -> Path:
+    """Setup environment and logging."""
+    # Setup directories
+    app_dir = setup_directories(app_dir)
+    
+    # Setup logging
+    log_file = app_dir / 'logs/app.log'
+    setup_logging(log_level="INFO", log_file=str(log_file))
+    
+    # Load environment
+    load_environment(app_dir)
+    
+    return app_dir
 
-# Load environment variables
-def setup_environment() -> None:
-    """Setup environment variables."""
-    env_path = Path(".env")
-    if env_path.exists():
-        load_dotenv(env_path)
-        logger.info("Loaded environment variables from .env file")
-    else:
-        logger.warning(".env file not found, using system environment variables")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application."""
+    logger = get_logger(__name__)
+    try:
+        # Initialize components in parallel
+        await asyncio.gather(
+            db_pool.create_pool(),
+            face_recognition_system.initialize()
+        )
+        logger.info("Application initialized successfully")
+        yield
+    except Exception as e:
+        logger.error(f"Failed to initialize application: {str(e)}")
+        raise
+    finally:
+        # Cleanup
+        await asyncio.gather(
+            db_pool.close(),
+            face_recognition_system.cleanup()
+        )
+        logger.info("Application shutdown complete")
 
-def create_app() -> FastAPI:
+def create_app(app_dir: Path) -> FastAPI:
     """Create FastAPI application."""
-    # Initialize environment
-    setup_environment()
-    
-    # Create FastAPI app
-    app = FastAPI(
-        title="CernoID API",
-        description="Face Recognition and Identity Management API",
-        version="1.0.0"
-    )
-    
-    # Configure CORS
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    
-    # Initialize components
-    settings = Settings()
-    
-    @app.on_event("startup")
-    async def startup_event():
-        """Initialize application components on startup."""
-        try:
-            logger.info("Application initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize application: {str(e)}")
-            raise
-    
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        """Cleanup application components on shutdown."""
-        try:
-            await db_pool.close()
-            logger.info("Application shutdown complete")
-        except Exception as e:
-            logger.error(f"Error during application shutdown: {str(e)}")
-            raise
-    
-    @app.get("/health")
-    async def health_check():
-        """Health check endpoint."""
-        return {
-            "status": "healthy",
-            "version": "1.0.0"
-        }
-    
-    # Register API routes
-    app.include_router(main_router, prefix="/api/v1")
-    
-    return app
+    logger = get_logger(__name__)
+    try:
+        app = FastAPI(
+            title="CernoID API",
+            description="Face Recognition and Identity Management API",
+            version="1.0.0",
+            lifespan=lifespan
+        )
 
-# Create application instance
-app = create_app()
+        # Configure CORS
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
-if __name__ == "__main__":
-    import uvicorn
+        # Mount static files
+        static_dir = app_dir / 'static'
+        if static_dir.exists():
+            app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+        # Health check endpoint
+        @app.get("/health")
+        async def health_check():
+            return {
+                "status": "healthy",
+                "version": "1.0.0",
+                "database": await db_pool.is_connected(),
+                "face_recognition": face_recognition_system.is_initialized
+            }
+
+        # Register API routes
+        app.include_router(api_router, prefix="/api/v1")
+        
+        return app
+    except Exception as e:
+        logger.error(f"Failed to create application: {e}")
+        raise
+
+def run_app():
+    """Run the application - entry point for installed package."""
+    # Setup environment
+    app_dir = setup_environment()
+    
+    # Get the number of workers based on CPU cores
+    workers = min(multiprocessing.cpu_count(), 4)
+    
+    # Run the application
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
-        log_level="info"
-    ) 
+        workers=workers,
+        log_level="info",
+        reload=False,
+        access_log=True
+    )
+
+# Create application instance
+app_dir = setup_environment()
+app = create_app(app_dir)
+
+if __name__ == "__main__":
+    run_app() 

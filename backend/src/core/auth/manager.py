@@ -8,11 +8,11 @@ from fastapi import HTTPException, status
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
-from src.core.database.models.models import User
-from src.core.logging import get_logger
+from core.config import Settings
+from core.database.models.models import User
+from .schemas import TokenData
 
-logger = get_logger(__name__)
+settings = Settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class AuthManager:
@@ -32,37 +32,29 @@ class AuthManager:
         """Generate password hash."""
         return pwd_context.hash(password)
         
-    async def create_access_token(self, data: Dict) -> str:
+    def create_access_token(self, data: dict) -> str:
         """Create a new access token."""
         to_encode = data.copy()
         expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
         to_encode.update({"exp": expire})
-        try:
-            return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
-        except Exception as e:
-            logger.error(f"Failed to create access token: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Could not create access token"
-            )
+        encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return encoded_jwt
         
-    async def verify_token(self, token: str) -> Optional[Dict]:
+    async def verify_token(self, token: str) -> Optional[User]:
         """Verify an access token."""
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-            return payload
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            username: str = payload.get("sub")
+            if username is None:
+                return None
+            token_data = TokenData(username=username)
         except JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            return None
+
+        user = await User.get_by_username(token_data.username)
+        if user is None:
+            return None
+        return user
             
     async def get_current_user(self, token: str, db: AsyncSession) -> Optional[User]:
         """Get current user from token."""

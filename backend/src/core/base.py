@@ -1,25 +1,31 @@
-"""Base component class for application components."""
-from typing import Any, Dict
-from src.core.utils.errors import handle_errors
-from src.core.logging import get_logger
+"""Base component class."""
+from typing import Any
+from .utils.errors import handle_errors
+from .logging import get_logger
 
 logger = get_logger(__name__)
 
 class BaseComponent:
-    """Base class for application components."""
+    """Base class for all components."""
     
-    def __init__(self):
-        """Initialize component."""
+    @handle_errors
+    def initialize(self) -> None:
+        """Initialize the component."""
         pass
     
-    @handle_errors(logger=logger)
-    async def initialize(self) -> None:
-        """Initialize component."""
+    @handle_errors
+    def cleanup(self) -> None:
+        """Clean up component resources."""
         pass
     
-    @handle_errors(logger=logger)
-    async def cleanup(self) -> None:
-        """Cleanup component resources."""
+    @handle_errors
+    async def async_initialize(self) -> None:
+        """Initialize async component."""
+        pass
+    
+    @handle_errors
+    async def async_cleanup(self) -> None:
+        """Clean up async component resources."""
         pass
     
     def get_config(self, key: str, default: Any = None) -> Any:

@@ -1,73 +1,68 @@
 """Error handling utilities."""
 import functools
 import logging
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 
-from src.core.logging import get_logger
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 
-T = TypeVar('T', bound=Callable[..., Any])
+T = TypeVar("T", bound=Callable[..., Any])
 
 class ApplicationError(Exception):
-    """Base application error."""
-    def __init__(self, message: str, status_code: int = 500):
-        super().__init__(message)
+    """Base class for application errors."""
+    def __init__(self, message: str) -> None:
         self.message = message
-        self.status_code = status_code
+        super().__init__(self.message)
 
 class DatabaseError(ApplicationError):
-    """Database related errors."""
+    """Database-related errors."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=500)
+        super().__init__(message)
 
 class ValidationError(ApplicationError):
-    """Validation errors."""
+    """Data validation errors."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=400)
+        super().__init__(message)
 
-def handle_errors(logger: logging.Logger | None = None) -> Callable[[T], T]:
-    """Error handling decorator."""
-    def decorator(func: T) -> T:
-        @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            try:
-                return await func(*args, **kwargs)
-            except ApplicationError as e:
-                if logger:
-                    logger.error(f"{func.__name__} failed: {str(e)}")
-                raise
-            except Exception as e:
-                if logger:
-                    logger.exception(f"Unexpected error in {func.__name__}: {str(e)}")
-                raise ApplicationError(
-                    f"Internal server error: {str(e)}",
-                    status_code=500
-                )
-        return wrapper  # type: ignore
-    return decorator
+def handle_errors(func: T) -> T:
+    """Decorator to handle errors in functions."""
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except DatabaseError as e:
+            logger.error(f"Database error in {func.__name__}: {str(e)}")
+            raise
+        except ValidationError as e:
+            logger.error(f"Validation error in {func.__name__}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in {func.__name__}: {str(e)}")
+            raise ApplicationError(f"An unexpected error occurred: {str(e)}")
+    return cast(T, wrapper)
 
 class AuthenticationError(ApplicationError):
     """Exception raised for authentication errors."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=401)
+        super().__init__(message)
 
 class AuthorizationError(ApplicationError):
     """Exception raised for authorization errors."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=403)
+        super().__init__(message)
 
 class NotFoundError(ApplicationError):
     """Exception raised when a resource is not found."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=404)
+        super().__init__(message)
 
 class ConflictError(ApplicationError):
     """Exception raised when there's a conflict with existing data."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=409)
+        super().__init__(message)
 
 class ServiceError(ApplicationError):
     """Exception raised for service-level errors."""
     def __init__(self, message: str):
-        super().__init__(message, status_code=503) 
+        super().__init__(message) 
