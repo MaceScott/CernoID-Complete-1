@@ -2,7 +2,7 @@
 set -e
 
 # Wait for backend to be ready
-until curl -s http://backend:8000/health >/dev/null 2>&1; do
+until wget -q -O - http://backend:8000/health >/dev/null 2>&1; do
   echo "Waiting for backend to be ready..."
   sleep 2
 done

@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { useState, useRef } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { Button, TextField, Box, Typography, Container, Alert, Link } from '@mui/material';
+import { useAuth } from '@/lib/auth/hooks';
+import Link from 'next/link';
 import type { LoginCredentials } from '@/lib/auth/types';
 
 export const Login = () => {
@@ -64,10 +64,19 @@ export const Login = () => {
     
     if (ctx && videoRef.current) {
       ctx.drawImage(videoRef.current, 0, 0);
-      const imageData = canvas.toDataURL('image/jpeg');
       
       try {
-        await loginWithFace(imageData);
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Failed to create blob from canvas'));
+            }
+          }, 'image/jpeg', 0.95);
+        });
+        
+        await loginWithFace(blob);
         stopCamera();
       } catch (err) {
         console.error('Face recognition login failed:', err);
@@ -76,101 +85,103 @@ export const Login = () => {
   };
 
   return (
-    <Container component="main" maxWidth="xs">
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
-        <Typography component="h1" variant="h5">
-          Sign in to CernoID
-        </Typography>
+    <main className="flex min-h-screen flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold">Sign in to CernoID</h1>
+        </div>
 
         {error && (
-          <Alert severity="error" sx={{ mt: 2, width: '100%' }}>
-            {error}
-          </Alert>
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <span className="block sm:inline">{error}</span>
+          </div>
         )}
 
         {useFaceRecognition ? (
-          <Box sx={{ mt: 2, width: '100%', textAlign: 'center' }}>
+          <div className="space-y-4">
             <video
               ref={videoRef}
               autoPlay
               playsInline
-              style={{ width: '100%', maxWidth: '400px', borderRadius: '8px' }}
+              className="w-full rounded-lg shadow-lg"
             />
-            <Box sx={{ mt: 2 }}>
-              <Button
+            <div className="flex gap-4 justify-center">
+              <button
                 onClick={captureAndLogin}
-                variant="contained"
-                color="primary"
-                sx={{ mr: 1 }}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
               >
                 Verify Face
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={stopCamera}
-                variant="outlined"
-                color="secondary"
+                className="border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors"
               >
                 Cancel
-              </Button>
-            </Box>
-          </Box>
+              </button>
+            </div>
+          </div>
         ) : (
-          <Box component="form" onSubmit={handleLogin} sx={{ mt: 1, width: '100%' }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="username"
-              label="Username"
-              name="username"
-              autoComplete="username"
-              autoFocus
-              value={credentials.email}
-              onChange={handleChange}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Password"
-              type="password"
-              id="password"
-              autoComplete="current-password"
-              value={credentials.password}
-              onChange={handleChange}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ mt: 3, mb: 2 }}
-            >
-              Sign In
-            </Button>
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={startCamera}
-              sx={{ mb: 2 }}
-            >
-              Sign In with Face Recognition
-            </Button>
-            <Box sx={{ textAlign: 'center' }}>
-              <Link href="/register" variant="body2">
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Email
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                value={credentials.email}
+                onChange={handleChange}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                value={credentials.password}
+                onChange={handleChange}
+              />
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Sign In
+              </button>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={startCamera}
+                className="w-full border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Sign In with Face Recognition
+              </button>
+            </div>
+
+            <div className="text-center">
+              <Link 
+                href="/register"
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
                 Don't have an account? Sign up
               </Link>
-            </Box>
-          </Box>
+            </div>
+          </form>
         )}
-      </Box>
-    </Container>
+      </div>
+    </main>
   );
 }; 

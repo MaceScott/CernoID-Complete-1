@@ -5,6 +5,7 @@ import { hasPermission, hasRole, hasZoneAccess } from './utils';
 
 interface AuthContextType extends AuthState {
   login: (credentials: { email: string; password: string; remember?: boolean }) => Promise<void>;
+  loginWithFace: (faceData: Blob) => Promise<void>;
   register: (data: { email: string; password: string; name: string; confirmPassword: string }) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;

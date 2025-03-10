@@ -8,7 +8,7 @@ import * as authService from '@/lib/auth/service';
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
-  loginWithFace: (faceData: string) => Promise<void>;
+  loginWithFace: (faceData: Blob) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (token: string, password: string, confirmPassword: string) => Promise<void>;
@@ -91,18 +91,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const loginWithFace = async (faceData: string) => {
+  const loginWithFace = async (faceData: Blob) => {
     try {
       setError(null);
       setState(prev => ({ ...prev, isLoading: true }));
       
+      // Convert Blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
+            const base64String = reader.result.split(',')[1];
+            resolve(base64String);
+          } else {
+            reject(new Error('Failed to convert image to base64'));
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+      });
+      
+      reader.readAsDataURL(faceData);
+      const base64Data = await base64Promise;
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login/face`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ faceData }),
+        body: JSON.stringify({ faceData: base64Data }),
       });
 
       if (!response.ok) {
@@ -231,8 +249,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const value: AuthContextType = {
     ...state,
     login,
-    register,
     loginWithFace,
+    register,
     logout,
     resetPassword,
     updatePassword,

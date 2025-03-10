@@ -16,7 +16,7 @@ import {
   AdminPanelSettings as AdminIcon,
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/app/providers/AuthProvider';
+import { useAuth } from '@/hooks/useAuth';
 
 interface SidebarProps {
   open: boolean;

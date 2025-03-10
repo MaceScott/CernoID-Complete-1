@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Card, 
@@ -17,7 +17,7 @@ import {
   TextField,
   LinearProgress
 } from '@mui/material';
-import { useAuth } from '@/app/providers/AuthProvider';
+import { useAuth } from '@/hooks/useAuth';
 
 interface StorageMetrics {
   total: number;
@@ -27,6 +27,7 @@ interface StorageMetrics {
   lastBackup: string;
   recordingsSize: number;
   logsSize: number;
+  usagePercent: number;
 }
 
 interface BackupConfig {

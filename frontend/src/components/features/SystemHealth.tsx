@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Card, CardContent, Typography, Grid, CircularProgress, Alert } from '@mui/material';
-import { useAuth } from '@/app/providers/AuthProvider';
+import { useAuth } from '@/hooks/useAuth';
 
 interface SystemMetrics {
   cpu: number;
   memory: number;
   disk: number;
+  gpu: number;
+  temperature: number;
   uptime: string;
   activeUsers: number;
   lastUpdate: string;

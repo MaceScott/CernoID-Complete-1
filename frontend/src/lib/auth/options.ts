@@ -2,11 +2,41 @@ import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from '../prisma';
 import { compare } from 'bcryptjs';
-import { User } from '@/types';
 
 declare module 'next-auth' {
   interface Session {
-    user: User;
+    user: {
+      id: string;
+      username: string;
+      email: string;
+      role: string;
+      permissions: string[];
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      active: boolean;
+      lastLogin?: Date;
+    }
+  }
+
+  interface JWT {
+    role?: string;
+    permissions?: string[];
+    active?: boolean;
+    username?: string;
+  }
+
+  interface User {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    permissions: string[];
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    active: boolean;
+    lastLogin?: Date;
   }
 }
 
@@ -41,15 +71,13 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           username: user.username,
           email: user.email,
-          name: user.name,
           role: user.role,
-          status: user.status as 'active' | 'inactive' | 'suspended',
-          isAdmin: user.isAdmin,
-          accessLevel: user.accessLevel,
-          allowedZones: user.allowedZones,
-          lastLogin: user.lastLogin,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt
+          permissions: user.permissions,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          phone: user.phone,
+          active: user.active,
+          lastLogin: user.last_login
         };
       }
     })
@@ -69,10 +97,8 @@ export const authOptions: NextAuthOptions = {
           ...session.user,
           id: token.sub,
           role: token.role as string,
-          status: token.status as 'active' | 'inactive' | 'suspended',
-          isAdmin: token.isAdmin as boolean,
-          accessLevel: token.accessLevel as string,
-          allowedZones: token.allowedZones as string[],
+          permissions: token.permissions as string[],
+          active: token.active as boolean,
           username: token.username as string
         }
       };
@@ -80,10 +106,8 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.role = user.role;
-        token.status = user.status;
-        token.isAdmin = user.isAdmin;
-        token.accessLevel = user.accessLevel;
-        token.allowedZones = user.allowedZones;
+        token.permissions = user.permissions;
+        token.active = user.active;
         token.username = user.username;
       }
       return token;

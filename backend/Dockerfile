@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     git \
     curl \
+    wget \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -94,7 +95,7 @@ RUN cp models/haarcascade_frontalface_default.xml /usr/local/share/opencv4/haarc
 RUN mkdir -p /app/data /app/logs && \
     chmod -R 755 /app/data /app/logs
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 EXPOSE 8000
 
 # Copy and set up entrypoint

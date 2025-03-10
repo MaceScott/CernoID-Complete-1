@@ -24,8 +24,8 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install wget for health checks
+RUN apk add --no-cache wget
 
 # Copy only necessary files from builder
 COPY --from=builder /app/.next ./.next
@@ -49,7 +49,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000 || exit 1
+    CMD wget --spider http://localhost:3000 || exit 1
 
 # Use entrypoint script
 ENTRYPOINT ["/app/docker-entrypoint.sh"] 
