@@ -2,27 +2,24 @@
 
 import { Box, CssBaseline } from '@mui/material';
 import { useState } from 'react';
-import DashboardHeader from '@/components/dashboard/Header';
-import DashboardSidebar from '@/components/dashboard/Sidebar';
-import { AuthProvider } from '@/providers/AuthProvider';
-import { ThemeProvider } from '../../frontend/src/providers/ThemeProvider';
+import DashboardHeader from '../../components/Dashboard/Header';
+import DashboardSidebar from '../../components/Dashboard/Sidebar';
+import { AuthProvider } from '../providers/AuthProvider';
+import { ThemeProvider } from '../../components/providers/theme-provider';
 
 export default function DashboardLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   return (
     <ThemeProvider>
-      <CssBaseline />
       <AuthProvider>
         <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+          <CssBaseline />
           <DashboardHeader onToggleSidebar={toggleSidebar} />
           <DashboardSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
           <Box
@@ -30,14 +27,14 @@ export default function DashboardLayout({
             sx={{
               flexGrow: 1,
               p: 3,
-              pt: 10,
-              backgroundColor: 'background.default'
+              width: { sm: `calc(100% - 240px)` }
             }}
           >
+            <Box sx={{ minHeight: 64 }} /> {/* Toolbar spacer */}
             {children}
           </Box>
         </Box>
       </AuthProvider>
     </ThemeProvider>
-  );
+  )
 } 

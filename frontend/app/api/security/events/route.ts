@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { prisma } from '@/lib/prisma'
-import { SecurityEventSchema } from '@/lib/auth'
+import { prisma } from '../../../lib/prisma'
+import { SecurityEventSchema } from '../../../lib/auth/schemas'
 import { 
   withAuth, 
   parseQueryParams, 
   buildPaginationResponse,
   PaginationSchema 
-} from '@/lib/api-utils'
+} from '../../../lib/api-utils'
 
 const QuerySchema = PaginationSchema.extend({
   startDate: z.string().optional(),

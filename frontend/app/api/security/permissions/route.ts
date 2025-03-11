@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { prisma } from '@/lib/prisma'
-import { PermissionSchema } from '@/lib/auth'
+import { prisma } from '../../../../lib/prisma'
+import { PermissionSchema } from '../../../../lib/auth/schemas'
 import { 
   withAdminAuth, 
   parseQueryParams, 
   buildPaginationResponse,
   PaginationSchema 
-} from '@/lib/api-utils'
+} from '../../../../lib/api-utils'
 import { getServerSession } from 'next-auth/next'
-import { authOptions } from '@/lib/auth/options'
+import { authOptions } from '../../../../lib/auth/options'
 
 const QuerySchema = PaginationSchema.extend({
   role: z.string().optional(),

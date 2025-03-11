@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../../../lib/prisma";
 import { 
   withAuth, 
   withAdminAuth,
   parseQueryParams, 
   buildPaginationResponse,
   PaginationSchema 
-} from "@/lib/api-utils";
+} from "../../../lib/api-utils";
 
 const CameraSchema = z.object({
   name: z.string(),

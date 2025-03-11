@@ -25,6 +25,32 @@ function Test-Docker {
     }
 }
 
+# Function to check if a service is healthy
+function Test-ServiceHealth {
+    param(
+        [string]$ServiceName,
+        [int]$MaxAttempts = 20,
+        [int]$SleepSeconds = 1
+    )
+    
+    Write-Message "Waiting for $ServiceName to be healthy..."
+    $attempts = 0
+    while ($attempts -lt $MaxAttempts) {
+        $health = docker inspect --format='{{.State.Health.Status}}' "cernoid-complete-1-$ServiceName-1" 2>$null
+        if ($health -eq "healthy") {
+            Write-Success "$ServiceName is healthy"
+            return $true
+        }
+        $attempts++
+        if ($attempts -lt $MaxAttempts) {
+            Write-Message "Attempt $attempts/$MaxAttempts - $ServiceName not ready yet..."
+            Start-Sleep -Seconds $SleepSeconds
+        }
+    }
+    Write-Error "$ServiceName failed to become healthy after $MaxAttempts attempts"
+    return $false
+}
+
 # Main startup sequence
 function Start-CernoID {
     Write-Message "Starting CernoID System..."
@@ -39,13 +65,29 @@ function Start-CernoID {
     Write-Message "Starting services..."
     docker-compose up -d
 
-    # Wait a few seconds for services to initialize
-    Start-Sleep -Seconds 5
+    # Wait for core services first
+    if (-not (Test-ServiceHealth "db" -MaxAttempts 15 -SleepSeconds 1)) {
+        exit 1
+    }
+    
+    if (-not (Test-ServiceHealth "redis" -MaxAttempts 15 -SleepSeconds 1)) {
+        exit 1
+    }
+
+    # Then wait for application services
+    if (-not (Test-ServiceHealth "backend" -MaxAttempts 20 -SleepSeconds 1)) {
+        exit 1
+    }
+    
+    if (-not (Test-ServiceHealth "frontend" -MaxAttempts 20 -SleepSeconds 1)) {
+        exit 1
+    }
 
     # Get port numbers from environment or use defaults
     $frontendPort = if ($env:DOCKER_FRONTEND_PORT) { $env:DOCKER_FRONTEND_PORT } else { "3000" }
     
     # Open browser
+    Write-Message "Opening browser..."
     Start-Process "http://localhost:$frontendPort"
 
     Write-Success "CernoID System is now running!"
