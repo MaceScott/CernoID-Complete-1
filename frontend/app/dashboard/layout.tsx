@@ -2,10 +2,10 @@
 
 import { Box, CssBaseline } from '@mui/material';
 import { useState } from 'react';
-import DashboardHeader from '../../components/Dashboard/Header';
-import DashboardSidebar from '../../components/Dashboard/Sidebar';
+import DashboardHeader from '../components/Dashboard/Header';
+import DashboardSidebar from '../components/Dashboard/Sidebar';
 import { AuthProvider } from '../providers/AuthProvider';
-import { ThemeProvider } from '../../components/providers/theme-provider';
+import { ThemeProvider } from '../providers/ThemeProvider';
 
 export default function DashboardLayout({
   children,

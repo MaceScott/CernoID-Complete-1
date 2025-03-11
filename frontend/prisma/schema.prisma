@@ -20,6 +20,8 @@ model User {
   accounts      Account[]
   sessions      Session[]
   permissions   Permission[]
+  cameras       Camera[]    @relation("CameraCreator")
+  recognitions  Recognition[]
 }
 
 model Account {
@@ -62,4 +64,35 @@ model Permission {
   user      User     @relation(fields: [createdBy], references: [id])
 
   @@unique([role, resource, action, location])
+}
+
+model Camera {
+  id          String        @id @default(cuid())
+  name        String
+  url         String
+  location    String?
+  status      String        @default("offline")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  createdBy   String
+  updatedBy   String
+  creator     User          @relation("CameraCreator", fields: [createdBy], references: [id])
+  recognitions Recognition[]
+
+  @@index([status])
+}
+
+model Recognition {
+  id         String   @id @default(cuid())
+  userId     String
+  cameraId   String
+  timestamp  DateTime @default(now())
+  confidence Float
+  metadata   Json?
+  user       User     @relation(fields: [userId], references: [id])
+  camera     Camera   @relation(fields: [cameraId], references: [id])
+
+  @@index([userId])
+  @@index([cameraId])
+  @@index([timestamp])
 } 
