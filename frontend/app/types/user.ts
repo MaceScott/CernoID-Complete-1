@@ -10,6 +10,7 @@ export interface User {
   permissions: string[];
   lastLogin: string | null;
   lastAccess: string | null;
+  avatar?: string;
   accessHistory: {
     timestamp: string;
     action: string;

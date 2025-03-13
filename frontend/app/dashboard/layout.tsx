@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Box } from '@mui/material';
 import { Header } from '@/components/Layout/Header';
-import { Sidebar } from '@/components/Layout/Sidebar';
+import Sidebar from '@/components/Navigation/Sidebar';
 
 export default function DashboardLayout({
   children,
@@ -16,7 +16,7 @@ export default function DashboardLayout({
   return (
     <Box sx={{ display: 'flex' }}>
       <Header onToggleSidebar={toggleSidebar} />
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar open={sidebarOpen} onClose={toggleSidebar} />
       <Box
         component="main"
         sx={{

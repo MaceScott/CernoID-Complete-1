@@ -1,22 +1,63 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Alert } from '@/components/ui/alert';
+import {
+  Box,
+  Button,
+  TextField,
+  Typography,
+  CircularProgress,
+  Link as MuiLink,
+  InputAdornment,
+  Alert,
+  LinearProgress,
+} from '@mui/material';
+import {
+  Email as EmailIcon,
+  ArrowBack as ArrowBackIcon,
+} from '@mui/icons-material';
+import { motion, AnimatePresence } from 'framer-motion';
+import { z } from 'zod';
+
+const MotionBox = motion(Box);
+
+const emailSchema = z.string().email('Please enter a valid email address');
+
+interface ValidationError {
+  email?: string;
+}
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<ValidationError>({});
   const [success, setSuccess] = useState(false);
   const router = useRouter();
+
+  const validateEmail = (): boolean => {
+    try {
+      emailSchema.parse(email);
+      setValidationError({});
+      return true;
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setValidationError({ email: err.errors[0].message });
+      }
+      return false;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!validateEmail()) {
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -28,13 +69,16 @@ export function ForgotPassword() {
         body: JSON.stringify({ email }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('Failed to send reset email');
+        throw new Error(data.error || 'Failed to send reset email');
       }
 
       setSuccess(true);
     } catch (err) {
-      setError('Failed to send reset email. Please try again.');
+      console.error('Password reset error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to send reset email. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -42,49 +86,128 @@ export function ForgotPassword() {
 
   if (success) {
     return (
-      <div className="text-center">
-        <h2 className="text-2xl font-bold mb-4">Reset Email Sent</h2>
-        <p className="mb-6">
+      <MotionBox
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        sx={{ textAlign: 'center', width: '100%' }}
+      >
+        <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
+          Check Your Email
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
           If an account exists with the email you provided, you will receive password reset instructions.
-        </p>
-        <Link href="/login">
-          <Button variant="default">Return to Login</Button>
-        </Link>
-      </div>
+        </Typography>
+        <MuiLink
+          component={Link}
+          href="/login"
+          underline="none"
+        >
+          <Button
+            variant="contained"
+            startIcon={<ArrowBackIcon />}
+            sx={{ minWidth: 200 }}
+          >
+            Return to Login
+          </Button>
+        </MuiLink>
+      </MotionBox>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <Alert variant="destructive">
-          {error}
-        </Alert>
-      )}
-      <div className="space-y-2">
-        <Input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={isSubmitting}
-          required
-        />
-      </div>
-      <div className="space-y-2">
+    <MotionBox
+      component="form"
+      onSubmit={handleSubmit}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+      sx={{ width: '100%' }}
+    >
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <TextField
+        fullWidth
+        margin="normal"
+        label="Email"
+        type="email"
+        value={email}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          setError(null);
+          setValidationError({});
+        }}
+        error={!!validationError.email}
+        helperText={validationError.email}
+        disabled={isSubmitting}
+        required
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <EmailIcon color="action" />
+            </InputAdornment>
+          ),
+        }}
+        sx={{ mb: 3 }}
+      />
+
+      <Button
+        type="submit"
+        fullWidth
+        variant="contained"
+        disabled={isSubmitting}
+        sx={{ 
+          mb: 2,
+          py: 1.5,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {isSubmitting ? (
+          <CircularProgress size={24} sx={{ color: 'white' }} />
+        ) : (
+          'Send Reset Instructions'
+        )}
+        {isSubmitting && (
+          <LinearProgress
+            sx={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 2,
+            }}
+          />
+        )}
+      </Button>
+
+      <MuiLink
+        component={Link}
+        href="/login"
+        underline="none"
+      >
         <Button
-          type="submit"
-          className="w-full"
-          disabled={isSubmitting}
+          fullWidth
+          variant="outlined"
+          startIcon={<ArrowBackIcon />}
+          sx={{ py: 1.5 }}
         >
-          {isSubmitting ? 'Sending...' : 'Send Reset Instructions'}
+          Back to Login
         </Button>
-        <Link href="/login">
-          <Button variant="outline" className="w-full">
-            Back to Login
-          </Button>
-        </Link>
-      </div>
-    </form>
+      </MuiLink>
+    </MotionBox>
   );
 } 

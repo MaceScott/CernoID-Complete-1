@@ -1,65 +1,91 @@
 'use client';
 
-import React from 'react';
-import { LoginForm } from '@/components/Auth/LoginForm';
-import { Container, Box, Typography } from '@mui/material';
-import { headers } from 'next/headers';
+// Remove or comment out the 'use client' directive if it exists
+// export const metadata: Metadata = {
+//   title: 'Login - CernoID Security',
+//   description: 'Login to CernoID Security System',
+// };
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+import React, { useState, useEffect } from 'react';
+import { Box, Container, Paper, Typography, useTheme } from '@mui/material';
+import { LoginForm } from '@/components/Auth/LoginForm';
+import { TopBar } from '@/components/Navigation/TopBar';
+import { Metadata } from 'next';
+import { motion } from 'framer-motion';
+
+const MotionPaper = motion(Paper);
+const MotionBox = motion(Box);
+
 export default function LoginPage() {
-  // Force new headers on each request
-  headers();
-  
-  // Generate a unique key for LoginForm on each render to force remount
-  const formKey = React.useMemo(() => Date.now().toString(), []);
+  const theme = useTheme();
+  const [isDarkMode, setIsDarkMode] = useState(theme.palette.mode === 'dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      setIsDarkMode(savedTheme === 'dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = isDarkMode ? 'light' : 'dark';
+    setIsDarkMode(!isDarkMode);
+    localStorage.setItem('theme', newTheme);
+  };
 
   return (
-    <>
-      {/* Add meta tags to prevent caching */}
-      <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-      <meta httpEquiv="Pragma" content="no-cache" />
-      <meta httpEquiv="Expires" content="0" />
-      
-      <Container maxWidth="sm" sx={{ py: 4 }}>
-        <Box sx={{ 
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          pt: 8
-        }}>
-          <Box sx={{ mb: 6, textAlign: 'center' }}>
-            <Typography 
-              variant="h2" 
-              component="h1" 
-              sx={{ 
-                fontWeight: 800,
-                color: 'primary.main',
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        bgcolor: isDarkMode ? 'background.default' : 'grey.50',
+      }}
+    >
+      <TopBar onThemeToggle={toggleTheme} isDarkMode={isDarkMode} />
+      <Container maxWidth="sm" sx={{ mt: 8, mb: 4 }}>
+        <MotionPaper
+          elevation={3}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          sx={{
+            p: 4,
+            borderRadius: 2,
+            bgcolor: isDarkMode ? 'background.paper' : 'white',
+            boxShadow: isDarkMode
+              ? '0 8px 32px rgba(0, 0, 0, 0.3)'
+              : '0 8px 32px rgba(0, 0, 0, 0.1)',
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
                 mb: 2,
-                fontSize: { xs: '2.5rem', sm: '3.5rem' }
+                fontWeight: 600,
+                background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                textAlign: 'center',
               }}
             >
-              CernoID Security
+              Welcome to CernoID Security
             </Typography>
-            <Typography 
-              variant="h5" 
-              component="h2" 
-              sx={{ 
-                color: 'text.secondary',
-                fontWeight: 500
-              }}
-            >
-              Enterprise Security Management System
-            </Typography>
-          </Box>
-          
-          <LoginForm key={formKey} />
-        </Box>
+          </motion.div>
+          <LoginForm />
+        </MotionPaper>
       </Container>
-    </>
+    </Box>
   );
 } 

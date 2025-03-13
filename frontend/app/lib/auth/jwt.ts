@@ -6,6 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 interface JWTUser extends JWTPayload {
   id: string;
   email: string;
+  name: string;
   role: string;
   permissions: string[];
   zones: string[];
@@ -37,6 +38,7 @@ export async function verifyToken(token: string): Promise<User | null> {
     return {
       id: payload.id,
       email: payload.email,
+      name: payload.name,
       role: payload.role,
       permissions: payload.permissions,
       zones: payload.zones

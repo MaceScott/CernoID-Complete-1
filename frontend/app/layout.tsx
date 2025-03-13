@@ -1,9 +1,15 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+// Remove or comment out the 'use client' directive if it exists
+// import type { Metadata } from 'next';
 import './globals.css';
-import { Providers } from './providers/providers';
+import { ThemeProvider } from './theme/ThemeProvider';
+import { DashboardLayout } from './components/Layout/DashboardLayout';
+import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
+import { usePathname } from 'next/navigation';
+import type { Metadata } from 'next';
+import { AuthProvider } from './providers/AuthProvider';
 
-const inter = Inter({ subsets: ['latin'] });
+// Routes that don't use the app layout
+const publicRoutes = ['/login', '/register', '/forgot-password'];
 
 export const metadata: Metadata = {
   title: 'CernoID - Secure Access Control',
@@ -15,12 +21,19 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const isPublicRoute = publicRoutes.includes(pathname);
+
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <Providers>
-          {children}
-        </Providers>
+      <body>
+        <AppRouterCacheProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              {isPublicRoute ? children : <DashboardLayout>{children}</DashboardLayout>}
+            </AuthProvider>
+          </ThemeProvider>
+        </AppRouterCacheProvider>
       </body>
     </html>
   );

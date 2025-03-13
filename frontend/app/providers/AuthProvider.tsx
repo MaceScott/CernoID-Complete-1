@@ -1,10 +1,23 @@
 'use client';
 
-import { createContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import type { User, AuthState, LoginCredentials, RegisterData, AuthContextType } from '@/lib/auth/types';
+import type { User } from '@/types/auth';
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  error: string | null;
+  login: (credentials: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
+  loginWithFace: (faceData: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  register: (data: { email: string; password: string; name: string }) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  updatePassword: (token: string, password: string, confirmPassword: string) => Promise<void>;
+  updateProfile: (data: { name?: string; email?: string }) => Promise<{ success: boolean; error?: string }>;
+}
+
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -12,103 +25,119 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
-    error: null,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const setError = (error: string | null) => {
-    setState(prev => ({ ...prev, error }));
+  // Check authentication status on mount
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/auth/me', {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      console.error('Auth check failed:', err);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const login = async (credentials: LoginCredentials) => {
+  const login = async (credentials: { email: string; password: string }) => {
     try {
       setError(null);
-      setState(prev => ({ ...prev, isLoading: true }));
-
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify(credentials),
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        throw new Error('Login failed');
-      }
-
       const data = await response.json();
-      if (!data.success || !data.data?.user) {
-        throw new Error(data.error || 'Login failed');
+
+      if (response.ok && data.success && data.data?.user) {
+        setUser(data.data.user);
+        return { success: true };
+      } else {
+        const errorMessage = data.error || 'Invalid email or password';
+        setError(errorMessage);
+        return { success: false, error: errorMessage };
       }
-      
-      setState(prev => ({
-        ...prev,
-        user: data.data.user,
-        isAuthenticated: true,
-        isLoading: false,
-      }));
-      
-      router.push('/dashboard');
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Login failed',
-      }));
-      throw error;
+    } catch (err) {
+      console.error('Login failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Login failed. Please try again.';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
     }
   };
 
   const loginWithFace = async (faceData: string) => {
     try {
       setError(null);
-      setState(prev => ({ ...prev, isLoading: true }));
-
       const response = await fetch('/api/auth/login/face', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({ faceData }),
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        throw new Error('Face recognition login failed');
-      }
-
       const data = await response.json();
-      if (!data.success || !data.data?.user) {
-        throw new Error(data.error || 'Face recognition login failed');
-      }
 
-      setState(prev => ({
-        ...prev,
-        user: data.data.user,
-        isAuthenticated: true,
-        isLoading: false,
-      }));
-      
-      router.push('/dashboard');
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Face recognition login failed',
-      }));
-      throw error;
+      if (response.ok && data.success && data.data?.user) {
+        setUser(data.data.user);
+        return { success: true };
+      } else {
+        const errorMessage = data.error || 'Face recognition failed';
+        setError(errorMessage);
+        return { success: false, error: errorMessage };
+      }
+    } catch (err) {
+      console.error('Face login failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Face recognition failed. Please try again.';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
     }
   };
 
-  const register = async (data: RegisterData) => {
+  const logout = async () => {
     try {
       setError(null);
-      setState(prev => ({ ...prev, isLoading: true }));
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        setUser(null);
+        router.replace('/login');
+      } else {
+        throw new Error('Logout failed');
+      }
+    } catch (err) {
+      console.error('Logout failed:', err);
+      setError('Logout failed. Please try again.');
+    }
+  };
+
+  const register = async (data: { email: string; password: string; name: string }) => {
+    try {
+      setError(null);
+      setLoading(true);
       
       const response = await fetch('/api/auth/register', {
         method: 'POST',
@@ -128,62 +157,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error(responseData.error || 'Registration failed');
       }
       
-      setState(prev => ({
-        ...prev,
-        user: responseData.data.user,
-        isAuthenticated: true,
-        isLoading: false,
-      }));
-      
+      setUser(responseData.data.user);
       router.push('/dashboard');
+      return responseData;
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Registration failed',
-      }));
+      setLoading(false);
+      setError(error instanceof Error ? error.message : 'Registration failed');
       throw error;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      setError(null);
-      setState(prev => ({ ...prev, isLoading: true }));
-      
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      
-      setState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: null,
-      });
-      
-      router.push('/login');
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Logout failed',
-      }));
     }
   };
 
   const resetPassword = async (email: string) => {
     try {
       setError(null);
-      setState(prev => ({ ...prev, isLoading: true }));
-      
+      setLoading(true);
+
       const response = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({ email }),
       });
 
@@ -195,14 +188,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!data.success) {
         throw new Error(data.error || 'Password reset failed');
       }
-      
-      setState(prev => ({ ...prev, isLoading: false }));
+
+      setLoading(false);
+      return data;
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Password reset failed',
-      }));
+      setLoading(false);
+      setError(error instanceof Error ? error.message : 'Password reset failed');
       throw error;
     }
   };
@@ -210,7 +201,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const updatePassword = async (token: string, password: string, confirmPassword: string) => {
     try {
       setError(null);
-      setState(prev => ({ ...prev, isLoading: true }));
+      setLoading(true);
       
       const response = await fetch('/api/auth/update-password', {
         method: 'POST',
@@ -230,67 +221,60 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error(data.error || 'Password update failed');
       }
       
-      setState(prev => ({ ...prev, isLoading: false }));
+      setLoading(false);
       router.push('/login');
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Password update failed',
-      }));
+      setLoading(false);
+      setError(error instanceof Error ? error.message : 'Password update failed');
       throw error;
     }
   };
 
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        const response = await fetch('/api/auth/me', {
-          method: 'GET',
-          credentials: 'include',
-        });
+  const updateProfile = async (data: { name?: string; email?: string }) => {
+    try {
+      setError(null);
+      setLoading(true);
 
-        if (!response.ok) {
-          throw new Error('Authentication check failed');
-        }
+      const response = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
 
-        const data = await response.json();
-        if (data.success && data.data?.user) {
-          setState({
-            user: data.data.user,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
-          });
-        } else {
-          setState({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null,
-          });
-        }
-      } catch (error) {
-        setState({
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-          error: error instanceof Error ? error.message : 'Authentication check failed',
-        });
+      if (!response.ok) {
+        throw new Error('Profile update failed');
       }
-    }
 
-    checkAuth();
-  }, []);
+      const responseData = await response.json();
+      if (!responseData.success || !responseData.data?.user) {
+        throw new Error(responseData.error || 'Profile update failed');
+      }
+
+      setUser(responseData.data.user);
+      setLoading(false);
+
+      return responseData;
+    } catch (error) {
+      setLoading(false);
+      setError(error instanceof Error ? error.message : 'Profile update failed');
+      throw error;
+    }
+  };
 
   const value: AuthContextType = {
-    ...state,
+    user,
+    loading,
+    error,
     login,
     loginWithFace,
-    register,
     logout,
+    register,
     resetPassword,
     updatePassword,
+    updateProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

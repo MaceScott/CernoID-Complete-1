@@ -2,21 +2,21 @@
 
 import React, { useEffect } from 'react';
 import { Box, CircularProgress } from '@mui/material';
-import { DashboardClient } from '@/components/features/dashboard/DashboardClient';
-import { useAuth } from '../hooks/useAuth';
+import { ProfileClient } from '@/components/features/profile/ProfileClient';
+import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
-export default function DashboardPage() {
-  const { user, loading } = useAuth();
+export default function ProfilePage() {
+  const { user, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!isLoading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [user, isLoading, router]);
 
-  if (loading || !user) {
+  if (isLoading || !user) {
     return (
       <Box
         sx={{
@@ -31,5 +31,5 @@ export default function DashboardPage() {
     );
   }
 
-  return <DashboardClient />;
+  return <ProfileClient />;
 } 

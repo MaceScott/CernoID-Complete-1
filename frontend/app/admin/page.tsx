@@ -1,35 +1,25 @@
-'use client';
+// Remove or comment out the 'use client' directive if it exists
 
-import React, { useEffect } from 'react';
-import { Box, CircularProgress } from '@mui/material';
-import { AdminClient } from '../components/features/admin/AdminClient';
-import { useAuth } from '../hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import React from 'react';
+import { AdminDashboard } from '@/components/features/admin/AdminDashboard';
+import { Box } from '@mui/material';
+import { Metadata } from 'next';
+import { AuthGuard } from '@/components/Auth/AuthGuard';
+import { AdminGuard } from '@/components/Auth/AdminGuard';
+
+export const metadata: Metadata = {
+  title: 'Admin Dashboard - CernoID Security',
+  description: 'Administrative controls for CernoID Security System',
+};
 
 export default function AdminPage() {
-  const { user, isLoading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!isLoading && (!user || user.role !== 'admin')) {
-      router.push('/unauthorized');
-    }
-  }, [user, isLoading, router]);
-
-  if (isLoading || !user) {
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh',
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  return <AdminClient />;
+  return (
+    <AuthGuard>
+      <AdminGuard>
+        <Box sx={{ height: '100vh', overflow: 'hidden' }}>
+          <AdminDashboard />
+        </Box>
+      </AdminGuard>
+    </AuthGuard>
+  );
 } 
