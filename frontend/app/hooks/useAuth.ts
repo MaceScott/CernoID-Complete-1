@@ -1,8 +1,8 @@
 'use client';
 
 import { useContext } from 'react';
-import { AuthContext } from '@/providers/AuthContext';
-import { AuthContextType } from '@/types/auth';
+import { AuthContext } from '@/providers/AuthProvider';
+import { AuthContextType } from '@/lib/auth/types';
 import { useRouter } from 'next/navigation';
 
 export function useAuth() {

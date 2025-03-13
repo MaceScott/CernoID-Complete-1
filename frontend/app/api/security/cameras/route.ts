@@ -1,184 +1,180 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import { prisma } from "../../../lib/prisma";
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
 import { 
   withAuth, 
   withAdminAuth,
   parseQueryParams, 
   buildPaginationResponse,
-  PaginationSchema 
-} from "../../../lib/api-utils";
+  PaginationSchema,
+  type ApiResponse
+} from '@/lib/api-utils';
 
 const CameraSchema = z.object({
   name: z.string(),
-  type: z.string(),
-  location: z.string(),
-  status: z.enum(["active", "inactive", "maintenance"]),
-  zoneId: z.string(),
-  settings: z.any().optional(),
+  url: z.string(),
+  location: z.string().optional(),
+  status: z.enum(["offline", "online"]).default("offline"),
 });
 
 const QuerySchema = PaginationSchema.extend({
   name: z.string().optional(),
-  type: z.string().optional(),
   location: z.string().optional(),
-  status: z.enum(["active", "inactive", "maintenance"]).optional(),
-  zoneId: z.string().optional(),
+  status: z.enum(["offline", "online"]).optional(),
 });
 
-export async function GET(request: Request) {
-  return withAuth(async () => {
-    const { searchParams } = new URL(request.url);
-    const query = parseQueryParams(searchParams, QuerySchema);
+export async function GET(request: NextRequest) {
+  return withAuth(request, async (session) => {
+    const query = parseQueryParams(request, QuerySchema);
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
 
     const where = {
       ...(query.name && { name: { contains: query.name } }),
-      ...(query.type && { type: query.type }),
       ...(query.location && { location: query.location }),
       ...(query.status && { status: query.status }),
-      ...(query.zoneId && { zoneId: query.zoneId }),
     };
 
     const [total, cameras] = await Promise.all([
       prisma.camera.count({ where }),
       prisma.camera.findMany({
         where,
-        take: query.limit || 10,
-        skip: query.offset || 0,
-        orderBy: { name: "asc" },
+        take: limit,
+        skip,
+        orderBy: { createdAt: 'desc' },
         include: {
-          zone: {
+          alerts: {
+            select: {
+              id: true,
+              title: true,
+              severity: true,
+              description: true,
+              createdAt: true,
+              status: true,
+              sourceType: true,
+            },
+          },
+          creator: {
             select: {
               id: true,
               name: true,
-              level: true,
+              email: true,
             },
-          },
-          alerts: {
-            where: { status: "open" },
-            select: {
-              id: true,
-              type: true,
-              severity: true,
-              message: true,
-              createdAt: true,
-            },
-            take: 5,
-            orderBy: { createdAt: "desc" },
           },
         },
       }),
     ]);
 
-    return buildPaginationResponse(
-      cameras,
-      total,
-      query.limit || 10,
-      query.offset || 0
-    );
+    return NextResponse.json({
+      success: true,
+      data: buildPaginationResponse(cameras, total, query)
+    }, { status: 200 });
   });
 }
 
-export async function POST(request: Request) {
-  return withAdminAuth(async (user) => {
+export async function POST(request: NextRequest) {
+  return withAuth(request, async (session) => {
     const body = await request.json();
     const data = CameraSchema.parse(body);
 
-    // Verify zone exists
-    const zone = await prisma.securityZone.findUnique({
-      where: { id: data.zoneId },
+    const existingCamera = await prisma.camera.findFirst({
+      where: {
+        name: data.name,
+      },
     });
 
-    if (!zone) {
-      throw new Error("Security zone not found");
+    if (existingCamera) {
+      return NextResponse.json({
+        success: false,
+        error: 'Camera already exists'
+      }, { status: 409 });
     }
 
-    const camera = await prisma.camera.create({
-      data: {
-        ...data,
-      },
-      include: {
-        zone: {
-          select: {
-            id: true,
-            name: true,
-            level: true,
-          },
+    try {
+      const camera = await prisma.camera.create({
+        data: {
+          ...data,
+          createdBy: session.id,
+          updatedBy: session.id,
         },
-      },
-    });
+      });
 
-    return NextResponse.json(camera, { status: 201 });
+      return NextResponse.json({
+        success: true,
+        data: camera
+      }, { status: 201 });
+    } catch (error) {
+      console.error('Failed to create camera:', error);
+      return NextResponse.json({
+        success: false,
+        error: "Failed to create camera"
+      }, { status: 500 });
+    }
   });
 }
 
-export async function PUT(request: Request) {
-  return withAdminAuth(async () => {
+export async function PUT(request: NextRequest) {
+  return withAuth(request, async (session) => {
     const body = await request.json();
     const { id, ...data } = body;
 
     if (!id) {
-      throw new Error("Camera ID is required");
+      return NextResponse.json({
+        success: false,
+        error: 'Camera ID is required'
+      }, { status: 400 });
     }
 
     const validatedData = CameraSchema.parse(data);
 
-    // Verify zone exists if changing zone
-    if (validatedData.zoneId) {
-      const zone = await prisma.securityZone.findUnique({
-        where: { id: validatedData.zoneId },
+    try {
+      const camera = await prisma.camera.update({
+        where: { id },
+        data: {
+          ...validatedData,
+          updatedBy: session.id,
+        },
       });
 
-      if (!zone) {
-        throw new Error("Security zone not found");
-      }
+      return NextResponse.json({
+        success: true,
+        data: camera
+      }, { status: 200 });
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to update camera'
+      }, { status: 500 });
     }
-
-    const camera = await prisma.camera.update({
-      where: { id },
-      data: validatedData,
-      include: {
-        zone: {
-          select: {
-            id: true,
-            name: true,
-            level: true,
-          },
-        },
-      },
-    });
-
-    return camera;
   });
 }
 
-export async function DELETE(request: Request) {
-  return withAdminAuth(async () => {
+export async function DELETE(request: NextRequest) {
+  return withAuth(request, async () => {
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
+    const id = searchParams.get('id');
 
     if (!id) {
-      throw new Error("Camera ID is required");
+      return NextResponse.json({
+        success: false,
+        error: 'Camera ID is required'
+      }, { status: 400 });
     }
 
-    // Check if camera has open alerts
-    const camera = await prisma.camera.findUnique({
-      where: { id },
-      include: {
-        alerts: {
-          where: { status: "open" },
-        },
-      },
-    });
+    try {
+      await prisma.camera.delete({
+        where: { id },
+      });
 
-    if (camera?.alerts.length) {
-      throw new Error("Cannot delete camera with open alerts");
+      return NextResponse.json({
+        success: true,
+        message: 'Camera deleted successfully'
+      }, { status: 200 });
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to delete camera'
+      }, { status: 500 });
     }
-
-    await prisma.camera.delete({
-      where: { id },
-    });
-
-    return { message: "Camera deleted successfully" };
   });
 } 

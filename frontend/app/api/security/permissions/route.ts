@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { prisma } from '../../../../lib/prisma'
-import { PermissionSchema } from '../../../../lib/auth/schemas'
+import { prisma } from '@/lib/prisma'
+import { PermissionSchema } from '@/lib/auth/schemas'
 import { 
   withAdminAuth, 
   parseQueryParams, 
   buildPaginationResponse,
-  PaginationSchema 
-} from '../../../../lib/api-utils'
-import { getServerSession } from 'next-auth/next'
-import { authOptions } from '../../../../lib/auth/options'
+  PaginationSchema,
+  type ApiResponse
+} from '@/lib/api-utils'
 
 const QuerySchema = PaginationSchema.extend({
   role: z.string().optional(),
@@ -17,10 +16,11 @@ const QuerySchema = PaginationSchema.extend({
   location: z.string().optional(),
 })
 
-export async function GET(request: Request) {
-  return withAdminAuth(async () => {
-    const { searchParams } = new URL(request.url)
-    const query = parseQueryParams(searchParams, QuerySchema)
+export async function GET(request: NextRequest) {
+  return withAdminAuth(request, async (session) => {
+    const query = parseQueryParams(request, QuerySchema)
+    const { page, limit } = query
+    const skip = (page - 1) * limit
 
     const where = {
       ...(query.role && { role: query.role }),
@@ -32,23 +32,21 @@ export async function GET(request: Request) {
       prisma.permission.count({ where }),
       prisma.permission.findMany({
         where,
-        take: query.limit || 10,
-        skip: query.offset || 0,
+        take: limit,
+        skip,
         orderBy: { createdAt: 'desc' },
       }),
     ])
 
-    return buildPaginationResponse(
-      permissions,
-      total,
-      query.limit || 10,
-      query.offset || 0
-    )
+    return NextResponse.json({
+      success: true,
+      data: buildPaginationResponse(permissions, total, query)
+    }, { status: 200 })
   })
 }
 
-export async function POST(request: Request) {
-  return withAdminAuth(async (user) => {
+export async function POST(request: NextRequest) {
+  return withAdminAuth(request, async (session) => {
     const body = await request.json()
     const data = PermissionSchema.parse(body)
 
@@ -62,85 +60,89 @@ export async function POST(request: Request) {
     })
 
     if (existingPermission) {
-      throw new Error('Permission already exists')
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'Permission already exists',
+      }, { status: 409 })
     }
 
-    try {
-      const session = await getServerSession(authOptions)
-      
-      if (!session?.user) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 401 }
-        )
-      }
+    const permission = await prisma.permission.create({
+      data: {
+        ...data,
+        createdBy: session.user.id,
+        updatedBy: session.user.id,
+      },
+    })
 
-      const permission = await prisma.permission.create({
-        data: {
-          ...data,
-          createdBy: session.user.id,
-          updatedBy: session.user.id,
-        },
-      })
-
-      return NextResponse.json(permission, { status: 201 })
-    } catch (error) {
-      console.error('Failed to create permission:', error)
-      return NextResponse.json(
-        { error: "Failed to create permission" },
-        { status: 500 }
-      )
-    }
+    return NextResponse.json<ApiResponse<typeof permission>>({
+      success: true,
+      data: permission,
+    }, { status: 201 })
   })
 }
 
-export async function PUT(request: Request) {
-  return withAdminAuth(async (user) => {
+export async function PUT(request: NextRequest) {
+  return withAdminAuth(request, async (session) => {
     const body = await request.json()
     const { id, ...data } = body
 
     if (!id) {
-      throw new Error('Permission ID is required')
+      return NextResponse.json({
+        success: false,
+        error: 'Permission ID is required'
+      }, { status: 400 })
     }
 
     const validatedData = PermissionSchema.parse(data)
-
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     try {
       const permission = await prisma.permission.update({
         where: { id },
         data: {
           ...validatedData,
-          updatedBy: session.user.id,
+          updatedBy: session.id,
         },
       })
-      return NextResponse.json({ data: permission }, { status: 200 })
+
+      return NextResponse.json({
+        success: true,
+        data: permission
+      }, { status: 200 })
     } catch (error) {
-      return NextResponse.json(
-        { error: 'Failed to update permission' },
-        { status: 500 }
-      )
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to update permission'
+      }, { status: 500 })
     }
   })
 }
 
-export async function DELETE(request: Request) {
-  return withAdminAuth(async () => {
+export async function DELETE(request: NextRequest) {
+  return withAdminAuth(request, async () => {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
     if (!id) {
-      throw new Error('Permission ID is required')
+      return NextResponse.json({
+        success: false,
+        error: 'Permission ID is required'
+      }, { status: 400 })
     }
 
-    await prisma.permission.delete({
-      where: { id },
-    })
+    try {
+      await prisma.permission.delete({
+        where: { id },
+      })
 
-    return { message: 'Permission deleted successfully' }
+      return NextResponse.json({
+        success: true,
+        message: 'Permission deleted successfully'
+      }, { status: 200 })
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to delete permission'
+      }, { status: 500 })
+    }
   })
 } 

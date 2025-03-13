@@ -35,7 +35,6 @@ const nextConfig = {
   },
   experimental: {
     optimizeCss: true,
-    optimizeImages: true,
   },
   webpack: (config) => {
     config.externals.push({

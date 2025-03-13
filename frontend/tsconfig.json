@@ -24,8 +24,8 @@
     ],
     "paths": {
       "@/*": ["./app/*"],
-      "@/components/*": ["./components/*"],
-      "@/lib/*": ["./lib/*"]
+      "@/components/*": ["./app/components/*"],
+      "@/lib/*": ["./app/lib/*"]
     },
     "typeRoots": ["./node_modules/@types"]
   },

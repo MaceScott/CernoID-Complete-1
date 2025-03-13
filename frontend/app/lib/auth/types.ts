@@ -40,7 +40,7 @@ export interface ApiResponse<T> {
 }
 
 export interface AuthContextType extends AuthState {
-  login: (user: User) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<void>;
   loginWithFace: (faceData: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;

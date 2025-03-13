@@ -6,12 +6,12 @@ services:
       context: ./frontend
       args:
         - NODE_ENV=production
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-    ports:
-      - "${DOCKER_FRONTEND_PORT}:3000"
+    env_file:
+      - ./frontend/.env
     environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
+    ports:
+      - "3000:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -30,22 +30,13 @@ services:
 
   backend:
     build: ./backend
-    ports:
-      - "${DOCKER_BACKEND_PORT}:8000"
+    env_file:
+      - ./backend/.env
     environment:
-      - NODE_ENV=${NODE_ENV}
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-      - ENVIRONMENT=${ENVIRONMENT}
-      - DEBUG=${DEBUG}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "8000:8000"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -66,9 +57,9 @@ services:
   db:
     image: postgres:14-alpine
     environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=cernoid
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -82,7 +73,7 @@ services:
     networks:
       - cernoid_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cernoid"]
       interval: 5s
       timeout: 5s
       retries: 5

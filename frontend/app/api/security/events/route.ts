@@ -1,95 +1,90 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../lib/prisma'
-import { SecurityEventSchema } from '../../../lib/auth/schemas'
+import type { NextRequest } from 'next/server'
 import { 
   withAuth, 
   parseQueryParams, 
   buildPaginationResponse,
-  PaginationSchema 
+  PaginationSchema,
+  type ApiResponse 
 } from '../../../lib/api-utils'
 
 const QuerySchema = PaginationSchema.extend({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  type: z.string().optional(),
-  location: z.string().optional(),
+  sourceType: z.string().optional(),
   severity: z.enum(['low', 'medium', 'high']).optional(),
-  personId: z.string().optional(),
-})
+  status: z.enum(['open', 'closed', 'in_progress']).optional(),
+  assignedTo: z.string().optional(),
+});
 
-export async function GET(request: Request) {
-  return withAuth(async () => {
-    const { searchParams } = new URL(request.url)
-    const query = parseQueryParams(searchParams, QuerySchema)
+export async function GET(request: NextRequest) {
+  return withAuth(request, async (user) => {
+    const query = parseQueryParams(request.nextUrl.searchParams, QuerySchema)
+    const skip = (query.page - 1) * query.limit
 
     const where = {
       ...(query.startDate && {
-        timestamp: { gte: new Date(query.startDate) },
+        createdAt: { gte: new Date(query.startDate) },
       }),
       ...(query.endDate && {
-        timestamp: { 
+        createdAt: { 
           ...((query.startDate && { gte: new Date(query.startDate) }) || {}),
           lte: new Date(query.endDate),
         },
       }),
-      ...(query.type && { type: query.type }),
-      ...(query.location && { location: query.location }),
+      ...(query.sourceType && { sourceType: query.sourceType }),
       ...(query.severity && { severity: query.severity }),
-      ...(query.personId && { personId: query.personId }),
+      ...(query.status && { status: query.status }),
+      ...(query.assignedTo && { assignedTo: query.assignedTo }),
     }
 
-    const [total, events] = await Promise.all([
-      prisma.securityEvent.count({ where }),
-      prisma.securityEvent.findMany({
+    const [total, alerts] = await Promise.all([
+      prisma.alert.count({ where }),
+      prisma.alert.findMany({
         where,
-        orderBy: { timestamp: 'desc' },
-        take: query.limit || 10,
-        skip: query.offset || 0,
+        orderBy: { createdAt: 'desc' },
+        take: query.limit,
+        skip,
         include: {
-          person: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
+          creator: true,
+          assignedUser: true,
+          camera: true,
+          accessPoint: true,
         },
       }),
     ])
 
-    return buildPaginationResponse(
-      events,
-      total,
-      query.limit || 10,
-      query.offset || 0
-    )
+    const response = buildPaginationResponse(alerts, total, query)
+    return NextResponse.json<ApiResponse<typeof response>>({ 
+      success: true, 
+      data: response 
+    }, { status: 200 })
   })
 }
 
-export async function POST(request: Request) {
-  return withAuth(async (user) => {
-    if (!user) throw new Error("User is required")
-
-    const body = await request.json()
-    const data = SecurityEventSchema.parse(body)
-
-    const event = await prisma.securityEvent.create({
+export async function POST(request: NextRequest) {
+  return withAuth(request, async (user) => {
+    const data = await request.json()
+    
+    const alert = await prisma.alert.create({
       data: {
         ...data,
         createdBy: user.id,
+        updatedBy: user.id,
       },
       include: {
-        person: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
+        creator: true,
+        assignedUser: true,
+        camera: true,
+        accessPoint: true,
       },
     })
 
-    return NextResponse.json(event, { status: 201 })
+    return NextResponse.json<ApiResponse<typeof alert>>({ 
+      success: true, 
+      data: alert 
+    }, { status: 201 })
   })
 } 

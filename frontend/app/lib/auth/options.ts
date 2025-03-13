@@ -1,22 +1,24 @@
-import { NextAuthOptions } from 'next-auth';
+import { NextAuthOptions, DefaultSession, DefaultUser } from 'next-auth';
+import { JWT } from 'next-auth/jwt';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from '../prisma';
 import { compare } from 'bcryptjs';
+import type { Prisma } from '@prisma/client';
+
+interface CustomUser extends DefaultUser {
+  username: string;
+  role: string;
+  permissions: string[];
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  active: boolean;
+  lastLogin: Date | null;
+}
 
 declare module 'next-auth' {
-  interface Session {
-    user: {
-      id: string;
-      username: string;
-      email: string;
-      role: string;
-      permissions: string[];
-      firstName?: string;
-      lastName?: string;
-      phone?: string;
-      active: boolean;
-      lastLogin?: Date;
-    }
+  interface Session extends DefaultSession {
+    user: CustomUser;
   }
 
   interface JWT {
@@ -26,18 +28,7 @@ declare module 'next-auth' {
     username?: string;
   }
 
-  interface User {
-    id: string;
-    username: string;
-    email: string;
-    role: string;
-    permissions: string[];
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    active: boolean;
-    lastLogin?: Date;
-  }
+  interface User extends CustomUser {}
 }
 
 export const authOptions: NextAuthOptions = {
@@ -48,37 +39,47 @@ export const authOptions: NextAuthOptions = {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' }
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
+          where: { email: credentials.email },
+          include: {
+            permissions: true
+          }
         });
 
-        if (!user) {
+        if (!user || !user.email) {
           return null;
         }
 
-        const isValid = await compare(credentials.password, user.password);
+        const isValid = await compare(credentials.password, user.password || '');
 
         if (!isValid) {
           return null;
         }
 
+        // Ensure we only return users with valid email addresses and required fields
+        const [firstName, lastName] = (user.name || '').split(' ');
+        const permissions = user.permissions.map((p: { resource: string; action: string }) => `${p.resource}:${p.action}`);
+
         return {
           id: user.id,
-          username: user.username,
+          username: user.name || 'Anonymous',
+          name: user.name || 'Anonymous',
           email: user.email,
           role: user.role,
-          permissions: user.permissions,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          phone: user.phone,
-          active: user.active,
-          lastLogin: user.last_login
-        };
+          permissions,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          phone: null,
+          active: true,
+          lastLogin: user.updatedAt,
+          image: user.image,
+          emailVerified: user.emailVerified
+        } as CustomUser;
       }
     })
   ],

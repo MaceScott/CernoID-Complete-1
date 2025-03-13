@@ -14,11 +14,10 @@ export const SecurityEventSchema = z.object({
 
 export const PermissionSchema = z.object({
   id: z.string().optional(),
-  name: z.string(),
-  description: z.string().optional(),
-  type: z.enum(['role', 'zone', 'feature']),
-  value: z.string(),
-  metadata: z.record(z.unknown()).optional(),
+  role: z.string(),
+  resource: z.string(),
+  action: z.string(),
+  location: z.string().optional(),
 });
 
 export const SecurityZoneSchema = z.object({

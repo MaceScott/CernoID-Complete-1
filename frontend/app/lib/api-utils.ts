@@ -20,11 +20,13 @@ export const PaginationSchema = z.object({
 export type PaginationParams = z.infer<typeof PaginationSchema>;
 
 export function parseQueryParams<T extends z.ZodType>(
-  request: NextRequest,
+  searchParams: URLSearchParams | NextRequest,
   schema: T
 ): z.infer<T> {
-  const searchParams = Object.fromEntries(request.nextUrl.searchParams);
-  return schema.parse(searchParams);
+  const params = searchParams instanceof URLSearchParams
+    ? Object.fromEntries(searchParams)
+    : Object.fromEntries(searchParams.nextUrl.searchParams);
+  return schema.parse(params);
 }
 
 export function buildPaginationResponse<T>(

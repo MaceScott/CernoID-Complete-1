@@ -1,194 +1,165 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { SecurityZoneSchema } from '@/lib/auth/schemas'
 import { 
-  withAdminAuth, 
+  withAuth, 
   parseQueryParams, 
   buildPaginationResponse,
-  PaginationSchema 
+  PaginationSchema,
+  type ApiResponse
 } from '@/lib/api-utils'
 
 const QuerySchema = PaginationSchema.extend({
-  name: z.string().optional(),
-  level: z.string().transform(Number).optional(),
-  location: z.string().optional(),
+  level: z.number().int().min(0).optional(),
 })
 
-export async function GET(request: Request) {
-  return withAdminAuth(async () => {
-    const { searchParams } = new URL(request.url)
-    const query = parseQueryParams(searchParams, QuerySchema)
+export async function GET(request: NextRequest) {
+  return withAuth(request, async (session) => {
+    const query = parseQueryParams(request.nextUrl.searchParams, QuerySchema)
+    const { page, limit } = query
+    const skip = (page - 1) * limit
 
     const where = {
-      ...(query.name && { name: { contains: query.name } }),
-      ...(query.level && { level: query.level }),
-      ...(query.location && { locations: { has: query.location } }),
+      ...(query.level !== undefined && { level: query.level }),
     }
 
     const [total, zones] = await Promise.all([
-      prisma.securityZone.count({ where }),
-      prisma.securityZone.findMany({
+      prisma.zone.count({ where }),
+      prisma.zone.findMany({
         where,
-        take: query.limit || 10,
-        skip: query.offset || 0,
-        orderBy: { name: 'asc' },
+        take: limit,
+        skip,
+        orderBy: { createdAt: 'desc' },
         include: {
-          cameras: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
-              status: true,
-            },
-          },
-          accessPoints: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
-              status: true,
-            },
-          },
-          children: {
-            select: {
-              id: true,
-              name: true,
-              level: true,
-            },
-          },
-          parent: {
-            select: {
-              id: true,
-              name: true,
-              level: true,
-            },
-          },
+          creator: true,
+          accessPoints: true,
         },
       }),
     ])
 
-    return buildPaginationResponse(
-      zones,
-      total,
-      query.limit || 10,
-      query.offset || 0
-    )
+    const response = buildPaginationResponse(zones, total, query)
+    return NextResponse.json<ApiResponse<typeof response>>({
+      success: true,
+      data: response,
+    }, { status: 200 })
   })
 }
 
-export async function POST(request: Request) {
-  return withAdminAuth(async (user) => {
-    if (!user) throw new Error("User is required")
-
+export async function POST(request: NextRequest) {
+  return withAuth(request, async (session) => {
     const body = await request.json()
     const data = SecurityZoneSchema.parse(body)
 
-    const existingZone = await prisma.securityZone.findFirst({
+    const existingZone = await prisma.zone.findFirst({
       where: {
         name: data.name,
-        locations: { hasEvery: data.locations },
       },
     })
 
     if (existingZone) {
-      throw new Error('Security zone already exists for these locations')
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'Zone already exists',
+      }, { status: 409 })
     }
 
-    const zone = await prisma.securityZone.create({
+    const zone = await prisma.zone.create({
       data: {
-        ...data,
-        createdBy: user.id,
-        updatedBy: user.id,
+        name: data.name,
+        description: data.description,
+        level: data.level,
+        createdBy: session.user.id,
+        updatedBy: session.user.id,
       },
       include: {
-        cameras: true,
+        creator: true,
         accessPoints: true,
-        children: true,
-        parent: true,
       },
     })
 
-    return NextResponse.json(zone, { status: 201 })
+    return NextResponse.json<ApiResponse<typeof zone>>({
+      success: true,
+      data: zone,
+    }, { status: 201 })
   })
 }
 
-export async function PUT(request: Request) {
-  return withAdminAuth(async (user) => {
-    if (!user) throw new Error("User is required")
-
+export async function PUT(request: NextRequest) {
+  return withAuth(request, async (session) => {
     const body = await request.json()
     const { id, ...data } = body
 
     if (!id) {
-      throw new Error('Security zone ID is required')
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'Zone ID is required'
+      }, { status: 400 })
     }
 
     const validatedData = SecurityZoneSchema.parse(data)
 
-    // Check for circular dependencies in parent-child relationships
-    if (validatedData.parentZoneId) {
-      const parentZone = await prisma.securityZone.findUnique({
-        where: { id: validatedData.parentZoneId },
-        include: {
-          parent: true,
-        },
-      })
-
-      if (parentZone?.id === id || parentZone?.parent?.id === id) {
-        throw new Error('Circular parent-child relationship detected')
-      }
-    }
-
-    const zone = await prisma.securityZone.update({
+    const zone = await prisma.zone.update({
       where: { id },
       data: {
-        ...validatedData,
-        updatedBy: user.id,
+        name: validatedData.name,
+        description: validatedData.description,
+        level: validatedData.level,
+        updatedBy: session.user.id,
       },
       include: {
-        cameras: true,
+        creator: true,
         accessPoints: true,
-        children: true,
-        parent: true,
       },
     })
 
-    return zone
+    return NextResponse.json<ApiResponse<typeof zone>>({
+      success: true,
+      data: zone
+    }, { status: 200 })
   })
 }
 
-export async function DELETE(request: Request) {
-  return withAdminAuth(async () => {
+export async function DELETE(request: NextRequest) {
+  return withAuth(request, async () => {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
     if (!id) {
-      throw new Error('Security zone ID is required')
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'Zone ID is required'
+      }, { status: 400 })
     }
 
-    // Check if zone has children
-    const zone = await prisma.securityZone.findUnique({
+    const zone = await prisma.zone.findUnique({
       where: { id },
       include: {
-        children: true,
-        cameras: true,
         accessPoints: true,
       },
     })
 
-    if (zone?.children.length) {
-      throw new Error('Cannot delete zone with child zones')
+    if (!zone) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'Zone not found'
+      }, { status: 404 })
     }
 
-    if (zone?.cameras.length || zone?.accessPoints.length) {
-      throw new Error('Cannot delete zone with associated devices')
+    if (zone.accessPoints.length > 0) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'Cannot delete zone with associated access points'
+      }, { status: 400 })
     }
 
-    await prisma.securityZone.delete({
+    await prisma.zone.delete({
       where: { id },
     })
 
-    return { message: 'Security zone deleted successfully' }
+    return NextResponse.json<ApiResponse<null>>({
+      success: true,
+      data: null
+    }, { status: 200 })
   })
 } 

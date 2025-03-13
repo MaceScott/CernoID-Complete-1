@@ -1,13 +1,14 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import { prisma } from "../../../lib/prisma";
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
 import { 
   withAuth, 
   withAdminAuth,
   parseQueryParams, 
   buildPaginationResponse,
-  PaginationSchema 
-} from "../../../lib/api-utils";
+  PaginationSchema,
+  type ApiResponse
+} from '@/lib/api-utils';
 
 const AccessPointSchema = z.object({
   name: z.string(),
@@ -24,12 +25,14 @@ const QuerySchema = PaginationSchema.extend({
   location: z.string().optional(),
   status: z.enum(["active", "inactive", "maintenance"]).optional(),
   zoneId: z.string().optional(),
+  zone: z.string().optional(),
 });
 
-export async function GET(request: Request) {
-  return withAuth(async () => {
-    const { searchParams } = new URL(request.url);
-    const query = parseQueryParams(searchParams, QuerySchema);
+export async function GET(request: NextRequest) {
+  return withAuth(request, async (session) => {
+    const query = parseQueryParams(request, QuerySchema);
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
 
     const where = {
       ...(query.name && { name: { contains: query.name } }),
@@ -37,15 +40,16 @@ export async function GET(request: Request) {
       ...(query.location && { location: query.location }),
       ...(query.status && { status: query.status }),
       ...(query.zoneId && { zoneId: query.zoneId }),
+      ...(query.zone && { zoneId: query.zone }),
     };
 
     const [total, accessPoints] = await Promise.all([
       prisma.accessPoint.count({ where }),
       prisma.accessPoint.findMany({
         where,
-        take: query.limit || 10,
-        skip: query.offset || 0,
-        orderBy: { name: "asc" },
+        take: limit,
+        skip,
+        orderBy: { createdAt: 'desc' },
         include: {
           zone: {
             select: {
@@ -58,101 +62,117 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    return buildPaginationResponse(
-      accessPoints,
-      total,
-      query.limit || 10,
-      query.offset || 0
-    );
+    return NextResponse.json({
+      success: true,
+      data: buildPaginationResponse(accessPoints, total, query)
+    }, { status: 200 });
   });
 }
 
-export async function POST(request: Request) {
-  return withAdminAuth(async (user) => {
+export async function POST(request: NextRequest) {
+  return withAuth(request, async (session) => {
     const body = await request.json();
     const data = AccessPointSchema.parse(body);
 
-    // Verify zone exists
-    const zone = await prisma.securityZone.findUnique({
-      where: { id: data.zoneId },
+    const existingAccessPoint = await prisma.accessPoint.findFirst({
+      where: {
+        name: data.name,
+        zoneId: data.zoneId,
+      },
     });
 
-    if (!zone) {
-      throw new Error("Security zone not found");
+    if (existingAccessPoint) {
+      return NextResponse.json({
+        success: false,
+        error: 'Access point already exists'
+      }, { status: 409 });
     }
 
-    const accessPoint = await prisma.accessPoint.create({
-      data: {
-        ...data,
-      },
-      include: {
-        zone: {
-          select: {
-            id: true,
-            name: true,
-            level: true,
-          },
+    try {
+      const accessPoint = await prisma.accessPoint.create({
+        data: {
+          ...data,
+          createdBy: session.id,
+          updatedBy: session.id,
         },
-      },
-    });
+      });
 
-    return NextResponse.json(accessPoint, { status: 201 });
+      return NextResponse.json({
+        success: true,
+        data: accessPoint
+      }, { status: 201 });
+    } catch (error) {
+      console.error('Failed to create access point:', error);
+      return NextResponse.json({
+        success: false,
+        error: "Failed to create access point"
+      }, { status: 500 });
+    }
   });
 }
 
-export async function PUT(request: Request) {
-  return withAdminAuth(async () => {
+export async function PUT(request: NextRequest) {
+  return withAuth(request, async (session) => {
     const body = await request.json();
     const { id, ...data } = body;
 
     if (!id) {
-      throw new Error("Access point ID is required");
+      return NextResponse.json({
+        success: false,
+        error: 'Access point ID is required'
+      }, { status: 400 });
     }
 
     const validatedData = AccessPointSchema.parse(data);
 
-    // Verify zone exists if changing zone
-    if (validatedData.zoneId) {
-      const zone = await prisma.securityZone.findUnique({
-        where: { id: validatedData.zoneId },
+    try {
+      const accessPoint = await prisma.accessPoint.update({
+        where: { id },
+        data: {
+          ...validatedData,
+          updatedBy: session.id,
+        },
       });
 
-      if (!zone) {
-        throw new Error("Security zone not found");
-      }
+      return NextResponse.json({
+        success: true,
+        data: accessPoint
+      }, { status: 200 });
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to update access point'
+      }, { status: 500 });
     }
-
-    const accessPoint = await prisma.accessPoint.update({
-      where: { id },
-      data: validatedData,
-      include: {
-        zone: {
-          select: {
-            id: true,
-            name: true,
-            level: true,
-          },
-        },
-      },
-    });
-
-    return accessPoint;
   });
 }
 
-export async function DELETE(request: Request) {
-  return withAdminAuth(async () => {
+export async function DELETE(request: NextRequest) {
+  return withAuth(request, async () => {
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
+    const id = searchParams.get('id');
 
     if (!id) {
-      throw new Error("Access point ID is required");
+      return NextResponse.json({
+        success: false,
+        error: 'Access point ID is required'
+      }, { status: 400 });
     }
 
-    await prisma.accessPoint.delete({
-      where: { id },
-    });
+    try {
+      await prisma.accessPoint.delete({
+        where: { id },
+      });
 
-    return { message: "Access point deleted successfully" };
+      return NextResponse.json({
+        success: true,
+        message: 'Access point deleted successfully'
+      }, { status: 200 });
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to delete access point'
+      }, { status: 500 });
+    }
   });
 } 

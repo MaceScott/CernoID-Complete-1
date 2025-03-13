@@ -1,40 +1,38 @@
 'use client';
 
-import { Box, CssBaseline } from '@mui/material';
 import { useState } from 'react';
-import DashboardHeader from '../components/Dashboard/Header';
-import DashboardSidebar from '../components/Dashboard/Sidebar';
-import { AuthProvider } from '../providers/AuthProvider';
-import { ThemeProvider } from '../providers/ThemeProvider';
+import { Box } from '@mui/material';
+import { Header } from '@/components/Layout/Header';
+import { Sidebar } from '@/components/Layout/Sidebar';
 
 export default function DashboardLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-          <CssBaseline />
-          <DashboardHeader onToggleSidebar={toggleSidebar} />
-          <DashboardSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-          <Box
-            component="main"
-            sx={{
-              flexGrow: 1,
-              p: 3,
-              width: { sm: `calc(100% - 240px)` }
-            }}
-          >
-            <Box sx={{ minHeight: 64 }} /> {/* Toolbar spacer */}
-            {children}
-          </Box>
-        </Box>
-      </AuthProvider>
-    </ThemeProvider>
-  )
+    <Box sx={{ display: 'flex' }}>
+      <Header onToggleSidebar={toggleSidebar} />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: { sm: `calc(100% - ${240}px)` },
+          ml: { sm: sidebarOpen ? `${240}px` : 0 },
+          transition: theme =>
+            theme.transitions.create('margin', {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.leavingScreen,
+            }),
+        }}
+      >
+        {children}
+      </Box>
+    </Box>
+  );
 } 

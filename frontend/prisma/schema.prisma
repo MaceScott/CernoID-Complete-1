@@ -22,6 +22,10 @@ model User {
   permissions   Permission[]
   cameras       Camera[]    @relation("CameraCreator")
   recognitions  Recognition[]
+  accessPoints  AccessPoint[] @relation("AccessPointCreator")
+  zones         Zone[]       @relation("ZoneCreator")
+  assignedAlerts Alert[]     @relation("AlertAssignee")
+  createdAlerts Alert[]     @relation("AlertCreator")
 }
 
 model Account {
@@ -78,6 +82,7 @@ model Camera {
   updatedBy   String
   creator     User          @relation("CameraCreator", fields: [createdBy], references: [id])
   recognitions Recognition[]
+  alerts      Alert[]       @relation("CameraAlerts")
 
   @@index([status])
 }
@@ -95,4 +100,70 @@ model Recognition {
   @@index([userId])
   @@index([cameraId])
   @@index([timestamp])
+}
+
+model Zone {
+  id          String        @id @default(cuid())
+  name        String
+  level       Int          @default(1)
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdBy   String
+  updatedBy   String
+  creator     User         @relation("ZoneCreator", fields: [createdBy], references: [id])
+  accessPoints AccessPoint[]
+
+  @@index([level])
+}
+
+model AccessPoint {
+  id          String   @id @default(cuid())
+  name        String
+  location    String?
+  status      String   @default("offline")
+  type        String   @default("door")
+  lastAccess  DateTime?
+  settings    Json?
+  zoneId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  updatedBy   String
+  creator     User     @relation("AccessPointCreator", fields: [createdBy], references: [id])
+  zone        Zone     @relation(fields: [zoneId], references: [id])
+  alerts      Alert[]  @relation("AccessPointAlerts")
+
+  @@index([status])
+  @@index([type])
+  @@index([zoneId])
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  severity    String
+  status      String   @default("open")
+  sourceType  String
+  cameraId    String?
+  accessPointId String?
+  metadata    Json?
+  assignedTo  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  updatedBy   String
+  creator     User     @relation("AlertCreator", fields: [createdBy], references: [id])
+  assignedUser User?   @relation("AlertAssignee", fields: [assignedTo], references: [id])
+  camera      Camera?  @relation("CameraAlerts", fields: [cameraId], references: [id])
+  accessPoint AccessPoint? @relation("AccessPointAlerts", fields: [accessPointId], references: [id])
+
+  @@index([severity])
+  @@index([status])
+  @@index([sourceType])
+  @@index([cameraId])
+  @@index([accessPointId])
+  @@index([assignedTo])
+  @@index([createdAt])
 } 

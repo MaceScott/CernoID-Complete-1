@@ -23,14 +23,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setState(prev => ({ ...prev, error }));
   };
 
-  const login = async (user: User) => {
+  const login = async (credentials: LoginCredentials) => {
     try {
       setError(null);
       setState(prev => ({ ...prev, isLoading: true }));
+
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(credentials),
+      });
+
+      if (!response.ok) {
+        throw new Error('Login failed');
+      }
+
+      const data = await response.json();
+      if (!data.success || !data.data?.user) {
+        throw new Error(data.error || 'Login failed');
+      }
       
       setState(prev => ({
         ...prev,
-        user,
+        user: data.data.user,
         isAuthenticated: true,
         isLoading: false,
       }));

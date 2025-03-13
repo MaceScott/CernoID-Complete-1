@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { verifyToken } from '../../../../lib/auth/jwt';
+import { verifyToken } from '@/lib/auth/jwt';
 
 // Force dynamic to handle cookie-based auth
 export const dynamic = 'force-dynamic';
