@@ -1,11 +1,34 @@
 """CernoID Startup Script"""
 import os
 import sys
+import subprocess
+import platform
+import time
 from pathlib import Path
 import webbrowser
 import threading
-import time
-import subprocess
+
+def get_project_root():
+    return Path(__file__).parent.absolute()
+
+def is_docker_running():
+    try:
+        subprocess.run(['docker', 'info'], capture_output=True, check=True)
+        return True
+    except:
+        return False
+
+def start_docker_compose():
+    subprocess.run(['docker-compose', 'up', '-d'], check=True)
+
+def start_dev_mode():
+    os.chdir('frontend')
+    subprocess.Popen(['npm', 'install'])
+    subprocess.Popen(['npm', 'run', 'dev'])
+    
+    os.chdir('../backend')
+    subprocess.Popen(['pip', 'install', '-r', 'requirements.txt'])
+    subprocess.Popen(['python', '-m', 'uvicorn', 'main:app', '--reload'])
 
 def open_browser():
     """Open the frontend in the default browser after a short delay"""
@@ -91,5 +114,37 @@ def run_app():
     # Run backend in main thread
     run_backend()
 
+def main():
+    root_dir = get_project_root()
+    os.chdir(root_dir)
+
+    print("Starting CernoID...")
+    
+    # Check if --dev flag is passed
+    dev_mode = '--dev' in sys.argv
+    
+    if dev_mode:
+        print("Starting in development mode...")
+        start_dev_mode()
+    else:
+        if not is_docker_running():
+            print("Docker is not running. Please start Docker and try again.")
+            sys.exit(1)
+        
+        print("Starting in production mode with Docker...")
+        start_docker_compose()
+        
+        # Wait for services to be ready
+        time.sleep(5)
+        
+        # Open browser
+        url = "http://localhost:3000/login"
+        if platform.system() == 'Windows':
+            os.system(f'start {url}')
+        elif platform.system() == 'Darwin':
+            os.system(f'open {url}')
+        else:
+            os.system(f'xdg-open {url}')
+
 if __name__ == "__main__":
-    run_app() 
+    main() 

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import { useContext } from 'react';
+import { AuthContext } from '@/providers/AuthProvider';
 import { LoginCredentials } from '@/lib/auth/types';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -43,7 +44,7 @@ interface ValidationErrors {
 }
 
 export const LoginForm = () => {
-  const { login, loginWithFace } = useAuth();
+  const { login, loginWithFace } = useContext(AuthContext);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -52,21 +53,26 @@ export const LoginForm = () => {
   const mounted = useRef(false);
   const [showCameraDialog, setShowCameraDialog] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [credentials, setCredentials] = useState<LoginCredentials>({
-    email: '',
-    password: '',
+  const [credentials, setCredentials] = useState<LoginCredentials>(() => {
+    // Try to get stored email from localStorage
+    const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('lastEmail') : null;
+    return {
+      email: storedEmail || '',
+      password: '',
+    };
   });
+  const formRef = useRef<HTMLFormElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // Reset form state on mount
   useEffect(() => {
     mounted.current = true;
-    // Reset all form state
-    setCredentials({ email: '', password: '' });
-    setError(null);
-    setValidationErrors({});
-    setShowPassword(false);
     return () => {
       mounted.current = false;
+      // Cleanup camera stream if component unmounts
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
     };
   }, []);
 
@@ -90,8 +96,16 @@ export const LoginForm = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setCredentials(prev => ({ ...prev, [name]: value }));
+    
+    // Store email in localStorage when it changes
+    if (name === 'email' && typeof window !== 'undefined') {
+      localStorage.setItem('lastEmail', value);
+    }
+    
+    // Clear error when user starts typing
     setError(null);
     
+    // Clear validation error for the field being edited
     if (validationErrors[name as keyof ValidationErrors]) {
       setValidationErrors(prev => ({ ...prev, [name]: undefined }));
     }
@@ -100,6 +114,7 @@ export const LoginForm = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setValidationErrors({});
 
     if (!validateForm()) {
       return;
@@ -110,22 +125,13 @@ export const LoginForm = () => {
     try {
       const response = await login(credentials);
       
-      if (response.success) {
-        // Clear form state
-        setCredentials({ email: '', password: '' });
-        setValidationErrors({});
-        setShowPassword(false);
-        
-        // Use Next.js router for navigation
-        router.replace('/dashboard');
-      } else {
-        throw new Error(response.error || 'Invalid email or password');
+      if (!response.success) {
+        setError(response.error || 'Invalid email or password');
+        setCredentials(prev => ({ ...prev, password: '' }));
       }
     } catch (err) {
-      console.error('Login error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Invalid email or password';
       setError(errorMessage);
-      // Only clear password on error, keep email
       setCredentials(prev => ({ ...prev, password: '' }));
     } finally {
       if (mounted.current) {
@@ -149,44 +155,31 @@ export const LoginForm = () => {
         }
       });
 
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.setAttribute('playsinline', 'true');
-      video.setAttribute('autoplay', 'true');
-      await video.play();
+      streamRef.current = stream;
 
-      // Wait for video to be ready
-      await new Promise((resolve) => {
-        video.onloadedmetadata = () => {
-          video.play();
-          resolve(true);
-        };
-      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
 
-      // Give more time for face detection
-      await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait for video to stabilize
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Could not get canvas context');
+        const canvas = document.createElement('canvas');
+        canvas.width = videoRef.current.videoWidth;
+        canvas.height = videoRef.current.videoHeight;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Could not get canvas context');
 
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      stream.getTracks().forEach(track => track.stop());
-
-      const imageData = canvas.toDataURL('image/jpeg', 0.8);
-      
-      const response = await loginWithFace(imageData);
-      
-      if (response.success) {
-        // Use Next.js router for navigation
-        router.replace('/dashboard');
-      } else {
-        throw new Error(response.error || 'Face not recognized. Please try again.');
+        context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+        
+        const response = await loginWithFace(imageData);
+        
+        if (!response.success) {
+          throw new Error(response.error || 'Face not recognized. Please try again.');
+        }
       }
     } catch (err) {
-      console.error('Face login error:', err);
       if (err instanceof Error) {
         if (err.name === 'NotAllowedError') {
           setCameraError('Camera access was denied. Please allow camera access and try again.');
@@ -202,6 +195,10 @@ export const LoginForm = () => {
       if (mounted.current) {
         setIsSubmitting(false);
         setShowCameraDialog(false);
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
       }
     }
   };
@@ -214,7 +211,7 @@ export const LoginForm = () => {
       transition={{ duration: 0.6, delay: 0.2 }}
       sx={{ width: '100%' }}
     >
-      <form onSubmit={handleSubmit} noValidate>
+      <form ref={formRef} onSubmit={handleSubmit} noValidate>
         <TextField
           fullWidth
           margin="normal"
@@ -257,171 +254,156 @@ export const LoginForm = () => {
             ),
             endAdornment: (
               <InputAdornment position="end">
-                <Tooltip title={showPassword ? "Hide password" : "Show password"}>
-                  <IconButton
-                    aria-label="toggle password visibility"
-                    onClick={() => setShowPassword(!showPassword)}
-                    edge="end"
-                  >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </Tooltip>
+                <IconButton
+                  aria-label="toggle password visibility"
+                  onClick={() => setShowPassword(!showPassword)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
               </InputAdornment>
             ),
           }}
           sx={{ mb: 2 }}
         />
 
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {error}
-              </Alert>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
 
         <Button
-          type="submit"
           fullWidth
           variant="contained"
+          color="primary"
+          type="submit"
           disabled={isSubmitting}
-          sx={{ 
-            mb: 2, 
-            py: 1.5,
-            position: 'relative',
-            overflow: 'hidden',
-          }}
+          sx={{ mb: 2 }}
         >
-          {isSubmitting ? (
-            <CircularProgress size={24} sx={{ color: 'white' }} />
-          ) : (
-            'Sign In'
-          )}
-          {isSubmitting && (
-            <LinearProgress
-              sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 2,
-              }}
-            />
-          )}
+          {isSubmitting ? <CircularProgress size={24} /> : 'Sign In'}
         </Button>
 
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-          <MuiLink
-            component={Link}
-            href="/forgot-password"
-            variant="body2"
-            underline="hover"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              color: 'text.secondary',
-              '&:hover': {
-                color: 'primary.main',
-              },
-            }}
-          >
-            <InfoIcon sx={{ fontSize: 16 }} />
-            Forgot password?
-          </MuiLink>
-          <MuiLink
-            component={Link}
-            href="/register"
-            variant="body2"
-            underline="hover"
-            sx={{
-              color: 'text.secondary',
-              '&:hover': {
-                color: 'primary.main',
-              },
-            }}
-          >
-            Create an account
-          </MuiLink>
-        </Box>
-
-        <Divider sx={{ my: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            OR
-          </Typography>
-        </Divider>
+        <Divider sx={{ my: 2 }}>OR</Divider>
 
         <Button
           fullWidth
           variant="outlined"
+          color="primary"
           onClick={handleFaceLogin}
           disabled={isSubmitting}
           startIcon={<FaceIcon />}
-          sx={{ 
-            py: 1.5,
-            position: 'relative',
-            overflow: 'hidden',
-          }}
+          sx={{ mb: 2 }}
         >
-          Sign in with Face ID
-          {isSubmitting && (
-            <LinearProgress
-              sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 2,
-              }}
-            />
-          )}
+          Sign In with Face ID
         </Button>
+
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
+          <Link href="/forgot-password" passHref>
+            <MuiLink variant="body2">
+              Forgot password?
+            </MuiLink>
+          </Link>
+          <Link href="/register" passHref>
+            <MuiLink variant="body2">
+              Don't have an account? Sign Up
+            </MuiLink>
+          </Link>
+        </Box>
       </form>
 
       <Dialog
         open={showCameraDialog}
         onClose={() => {
-          if (!isSubmitting) {
-            setShowCameraDialog(false);
+          setShowCameraDialog(false);
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
           }
         }}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <VideocamIcon />
-            <Typography>Face Recognition</Typography>
-          </Box>
-        </DialogTitle>
+        <DialogTitle>Face ID Login</DialogTitle>
         <DialogContent>
           {cameraError ? (
             <Alert severity="error" sx={{ mt: 2 }}>
               {cameraError}
             </Alert>
           ) : (
-            <Box sx={{ textAlign: 'center', py: 2 }}>
-              <CircularProgress />
-              <Typography sx={{ mt: 2 }}>
-                Please look at the camera for face recognition...
+            <>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                Please look directly at the camera and ensure good lighting.
               </Typography>
-            </Box>
+              <Box
+                sx={{
+                  position: 'relative',
+                  width: '100%',
+                  height: 480,
+                  backgroundColor: 'black',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                />
+                {isSubmitting && (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    }}
+                  >
+                    <CircularProgress color="primary" size={64} />
+                    <Typography variant="h6" color="white" sx={{ mt: 2 }}>
+                      Verifying...
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button 
-            onClick={() => setShowCameraDialog(false)}
-            disabled={isSubmitting}
+          <Button
+            onClick={() => {
+              setShowCameraDialog(false);
+              if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current = null;
+              }
+            }}
           >
             Cancel
           </Button>
+          {cameraError && (
+            <Button
+              onClick={() => {
+                setCameraError(null);
+                handleFaceLogin();
+              }}
+              variant="contained"
+            >
+              Try Again
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </MotionBox>

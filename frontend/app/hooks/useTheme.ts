@@ -1,31 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useContext } from 'react';
+import { ThemeContext } from '../theme/ThemeProvider';
+import { useMediaQuery } from '@mui/material';
 
-export const useTheme = () => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+export function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return context;
+}
 
-  useEffect(() => {
-    // Check if user has a theme preference in localStorage
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      setIsDarkMode(savedTheme === 'dark');
-    } else {
-      // Check system preference
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setIsDarkMode(prefersDark);
-    }
-  }, []);
+export function useThemeMode() {
+  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
+  const { isDarkMode, setIsDarkMode } = useTheme();
 
-  useEffect(() => {
-    // Save theme preference to localStorage
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
-    // Update document class for global styling
-    document.documentElement.classList.toggle('dark', isDarkMode);
-  }, [isDarkMode]);
+  const toggleTheme = () => {
+    setIsDarkMode(!isDarkMode);
+  };
 
   return {
     isDarkMode,
-    toggleTheme: () => setIsDarkMode(!isDarkMode),
+    setIsDarkMode,
+    toggleTheme,
+    prefersDarkMode
   };
-}; 
+} 

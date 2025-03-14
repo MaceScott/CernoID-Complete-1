@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Camera, AlertCircle, Maximize2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/lib/websocket";
-import Loading from "@/components/ui/loading";
+import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
 import Skeleton from "@/components/ui/skeleton";
 
 interface CameraFeedProps {
@@ -132,7 +132,7 @@ export function CameraFeed({
 
         {isConnecting && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90">
-            <Loading />
+            <LoadingOverlay open={true} message="Loading camera feed..." />
           </div>
         )}
 
@@ -157,8 +157,7 @@ export function CameraFeed({
         {!isConnected && !error && status === "active" && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90">
             <div className="text-center text-white">
-              <Loading />
-              <p className="mt-2">Reconnecting...</p>
+              <LoadingOverlay open={true} message="Reconnecting..." />
             </div>
           </div>
         )}

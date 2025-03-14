@@ -70,7 +70,6 @@ export async function POST(request: Request) {
         sameSite: 'lax',
         path: '/',
         maxAge: 60 * 60 * 24, // 24 hours
-        domain: new URL(origin).hostname
       });
 
       return response;
@@ -89,7 +88,6 @@ export async function POST(request: Request) {
         }
       }
     );
-
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

@@ -1,43 +1,81 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { verifyToken } from '@/lib/auth/jwt';
 
-// Force dynamic to handle cookie-based auth
-export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
+// Get origin from environment or default to localhost
+const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Get session cookie
     const cookieStore = cookies();
-    const token = cookieStore.get('token')?.value;
-    
-    if (!token) {
+    const sessionCookie = cookieStore.get('session');
+
+    if (!sessionCookie) {
       return NextResponse.json(
-        { error: 'Unauthorized', message: 'No token found' },
-        { status: 401 }
+        { success: false, error: 'Not authenticated' },
+        { 
+          status: 401,
+          headers: {
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          }
+        }
       );
     }
 
-    const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized', message: 'Invalid token' },
-        { status: 401 }
-      );
-    }
-
-    return NextResponse.json({ user }, { 
-      status: 200,
-      headers: {
-        'Cache-Control': 'no-store, must-revalidate',
-        'Pragma': 'no-cache'
+    // For demo purposes, return a mock user
+    // In a real app, you would validate the session token and fetch the user from a database
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          user: {
+            id: '1',
+            email: 'admin@cernoid.com',
+            name: 'Admin User',
+            role: 'admin',
+            permissions: ['admin'],
+            zones: [],
+          }
+        }
+      },
+      { 
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        }
       }
-    });
+    );
   } catch (error) {
     console.error('Auth check error:', error);
     return NextResponse.json(
-      { error: 'Internal server error', message: 'Failed to verify authentication' },
-      { status: 500 }
+      { success: false, error: 'Internal server error' },
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        }
+      }
     );
   }
+}
+
+// Handle OPTIONS request for CORS
+export async function OPTIONS() {
+  return NextResponse.json({}, {
+    headers: {
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    }
+  });
 } 
