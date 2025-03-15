@@ -7,16 +7,16 @@ import { useAuth } from '../hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!isLoading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [user, isLoading, router]);
 
-  if (loading || !user) {
+  if (isLoading || !user) {
     return (
       <Box
         sx={{

@@ -6,7 +6,7 @@ import { AuthContextType } from '@/lib/auth/types';
 import { useRouter } from 'next/navigation';
 
 export function useAuth() {
-  const context = useContext<AuthContextType | null>(AuthContext);
+  const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }

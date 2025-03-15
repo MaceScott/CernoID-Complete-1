@@ -1,128 +1,126 @@
+/**
+ * File: route.ts (face login)
+ * Purpose: Implements facial recognition login endpoint.
+ * 
+ * Key Features:
+ * - Face image data validation
+ * - JWT token generation
+ * - Secure cookie management
+ * - CORS support
+ * 
+ * Dependencies:
+ * - next/server: Next.js server utilities
+ * - zod: Request validation
+ * - jsonwebtoken: JWT token generation
+ * - Environment variables:
+ *   - JWT_SECRET: Secret key for JWT signing
+ * 
+ * Note: Current implementation is a demo that simulates face recognition.
+ * In production, this should be replaced with a proper face recognition service.
+ * 
+ * Endpoints:
+ * POST /api/auth/login/face
+ * - Validates face image data
+ * - Returns user data and sets session cookie
+ * 
+ * OPTIONS /api/auth/login/face
+ * - Handles CORS preflight requests
+ */
+
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { cookies } from 'next/headers';
+import { sign } from 'jsonwebtoken';
 
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
+
+if (!process.env.JWT_SECRET) {
+  console.warn('Warning: Using default JWT secret. Please set JWT_SECRET environment variable in production.');
+}
+
+/**
+ * Face login request validation schema
+ * Expects base64 encoded image data
+ */
 const faceLoginSchema = z.object({
-  faceData: z.string().min(1),
+  imageData: z.string(),
 });
 
-// Get origin from environment or default to localhost
-const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-
+/**
+ * POST /api/auth/login/face
+ * Handles user authentication via facial recognition
+ * 
+ * @param request - HTTP request object containing face image data
+ * @returns NextResponse with user data and session cookie, or error
+ */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    
-    // Validate request body
-    const result = faceLoginSchema.safeParse(body);
-    if (!result.success) {
+    const { imageData } = faceLoginSchema.parse(body);
+
+    // For demo purposes, we'll simulate face recognition
+    // In production, you would use a proper face recognition service
+    const isRecognized = true;
+
+    if (!isRecognized) {
       return NextResponse.json(
-        { success: false, error: 'Invalid request data' },
-        { 
-          status: 400,
-          headers: {
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Allow-Origin': origin,
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          }
-        }
+        { success: false, error: 'Face not recognized' },
+        { status: 401 }
       );
     }
 
-    const { faceData } = result.data;
+    // Create session token with user claims
+    const sessionToken = sign(
+      {
+        userId: '1',
+        email: 'admin@cernoid.com',
+        name: 'Admin User',
+        role: 'admin',
+        permissions: ['all'],
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-    // TODO: Implement actual face recognition
-    // For now, we'll just check if the face data is valid base64
-    try {
-      // Check if the face data is valid base64
-      const base64Regex = /^data:image\/[a-z]+;base64,/;
-      if (!base64Regex.test(faceData)) {
-        return NextResponse.json(
-          { success: false, error: 'Invalid face data format' },
-          { 
-            status: 400,
-            headers: {
-              'Access-Control-Allow-Credentials': 'true',
-              'Access-Control-Allow-Origin': origin,
-              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-              'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            }
-          }
-        );
-      }
+    // Set secure session cookie
+    cookies().set({
+      name: 'session',
+      value: sessionToken,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24, // 24 hours
+    });
 
-      // For testing purposes, always authenticate
-      const sessionToken = Buffer.from(Date.now().toString()).toString('base64');
-      
-      const response = NextResponse.json({
+    return NextResponse.json(
+      {
         success: true,
-        data: {
-          user: {
-            id: '1',
-            email: 'admin@cernoid.com',
-            name: 'Admin User',
-            role: 'admin',
-            permissions: ['admin'],
-            zones: [],
-          }
-        }
-      }, { 
-        status: 200,
-        headers: {
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Allow-Origin': origin,
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        }
-      });
-
-      // Set session cookie with proper configuration
-      response.cookies.set({
-        name: 'session',
-        value: sessionToken,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24, // 24 hours
-        domain: new URL(origin).hostname
-      });
-
-      return response;
-    } catch (error) {
-      console.error('Face data validation error:', error);
-      return NextResponse.json(
-        { success: false, error: 'Invalid face data' },
-        { 
-          status: 400,
-          headers: {
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Allow-Origin': origin,
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          }
-        }
-      );
-    }
+        user: {
+          id: '1',
+          email: 'admin@cernoid.com',
+          name: 'Admin User',
+          role: 'admin',
+          permissions: ['all'],
+        },
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error('Face login error:', error);
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { 
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Allow-Origin': origin,
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        }
-      }
+      { success: false, error: 'Face login failed' },
+      { status: 500 }
     );
   }
 }
 
-// Handle OPTIONS request for CORS
+/**
+ * OPTIONS /api/auth/login/face
+ * Handles CORS preflight requests with credentials support
+ * 
+ * @returns NextResponse with CORS headers
+ */
 export async function OPTIONS() {
   return NextResponse.json({}, {
     headers: {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { verify } from 'jsonwebtoken';
 
 // Define protected and public routes
 const protectedRoutes = [
@@ -18,6 +19,8 @@ const publicRoutes = [
   '/reset-password',
 ];
 
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -34,7 +37,28 @@ export async function middleware(request: NextRequest) {
 
   // Get session cookie
   const sessionCookie = request.cookies.get('session');
-  const isAuthenticated = !!sessionCookie;
+  let isAuthenticated = false;
+  let userRole = '';
+
+  if (sessionCookie) {
+    try {
+      // Verify JWT token
+      const payload = verify(sessionCookie.value, JWT_SECRET) as {
+        sub: string;
+        email: string;
+        role: string;
+        permissions: string[];
+      };
+      isAuthenticated = true;
+      userRole = payload.role;
+    } catch (error) {
+      console.error('Token validation error:', error);
+      // Invalid token, clear it
+      const response = NextResponse.redirect(new URL('/login', request.url));
+      response.cookies.delete('session');
+      return response;
+    }
+  }
 
   // Check for authentication on protected routes
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
@@ -58,7 +82,13 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  return NextResponse.next();
+  // Add user info to request headers for downstream handlers
+  const response = NextResponse.next();
+  if (isAuthenticated) {
+    response.headers.set('X-User-Role', userRole);
+  }
+
+  return response;
 }
 
 export const config = {
