@@ -1,4 +1,37 @@
-"""Authentication routes."""
+"""
+File: auth.py
+Purpose: Provides authentication endpoints for the CernoID system.
+
+Key Features:
+- Traditional email/password authentication
+- Face recognition login
+- User registration
+- Current user information retrieval
+- JWT token management
+
+Dependencies:
+- FastAPI: Web framework
+- OpenCV: Image processing
+- NumPy: Array operations
+- Core services:
+  - AuthService: Authentication logic
+  - FaceRecognitionSystem: Face detection/verification
+  - Database connection
+  - Logging system
+
+API Endpoints:
+- POST /auth/face-login: Face recognition login
+- POST /auth/token: Traditional login
+- POST /auth/register: User registration
+- GET /auth/me: Current user info
+
+Security:
+- JWT-based authentication
+- Face verification with confidence threshold
+- Password hashing (handled by AuthService)
+- Rate limiting (handled by middleware)
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 import numpy as np
@@ -12,17 +45,27 @@ from core.config import Settings
 from core.logging import get_logger
 from core.face_recognition.core import FaceRecognitionSystem
 
+# Initialize router and services
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = Settings()
 logger = get_logger(__name__)
 recognition_service = FaceRecognitionSystem()
 
-# Initialize with your face data
+# Hardcoded user for demo purposes
+# TODO: Replace with database-driven user management
 MACE_SCOTT_USERNAME = "mace.scott"
 MACE_SCOTT_EMAIL = "mace.scott@cernoid.com"
 
 def get_auth_service(db = Depends(get_db)) -> AuthService:
-    """Get auth service instance."""
+    """
+    Dependency injection for AuthService.
+    
+    Args:
+        db: Database session (injected by FastAPI)
+    
+    Returns:
+        AuthService: Configured authentication service
+    """
     return AuthService()
 
 @router.post("/face-login", response_model=Token)
@@ -30,16 +73,29 @@ async def face_login(
     image: UploadFile = File(...),
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    """Login with face recognition."""
+    """
+    Face recognition login endpoint.
+    
+    Args:
+        image: Uploaded face image file
+        auth_service: Injected AuthService instance
+    
+    Returns:
+        Token: JWT access token and type
+    
+    Raises:
+        HTTPException: If face verification fails or image processing errors occur
+    """
     try:
+        # Process uploaded image
         contents = await image.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Verify if it's Mace Scott
+        # Verify face against stored data
         result = await recognition_service.verify_face(img, MACE_SCOTT_USERNAME)
         if result and result.confidence > 0.9:  # High confidence threshold
-            # Create access token
+            # Generate access token
             access_token = auth_service.create_access_token(data={"sub": MACE_SCOTT_USERNAME})
             return {"access_token": access_token, "token_type": "bearer"}
         
@@ -60,7 +116,19 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    """Login endpoint."""
+    """
+    Traditional login endpoint using email/password.
+    
+    Args:
+        form_data: OAuth2 form data containing username and password
+        auth_service: Injected AuthService instance
+    
+    Returns:
+        Token: JWT access token and type
+    
+    Raises:
+        HTTPException: If authentication fails
+    """
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -76,10 +144,33 @@ async def register(
     user_data: UserCreate,
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    """Register new user."""
+    """
+    User registration endpoint.
+    
+    Args:
+        user_data: User creation data
+        auth_service: Injected AuthService instance
+    
+    Returns:
+        UserRead: Created user information
+    
+    Raises:
+        HTTPException: If registration fails (e.g., duplicate email)
+    """
     return await auth_service.create_user(user_data)
 
 @router.get("/me", response_model=UserRead)
 async def read_users_me(current_user: UserRead = Depends(get_current_user)):
-    """Get current user info."""
+    """
+    Get current authenticated user information.
+    
+    Args:
+        current_user: Injected current user data
+    
+    Returns:
+        UserRead: Current user information
+    
+    Raises:
+        HTTPException: If user is not authenticated
+    """
     return current_user 

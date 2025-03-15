@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { auth_service } from "../../../../core/security/security/auth"
+import { DatabaseService } from "../../../../core/database/service"
+
+// Get database service
+const db = new DatabaseService()
 
 // Validation schema
 const loginSchema = z.object({
@@ -23,29 +28,47 @@ export async function POST(req: NextRequest) {
 
     const { email, password } = result.data
 
-    // Log attempt (safely)
-    console.log('Login attempt:', { email, timestamp: new Date().toISOString() })
-
-    // Mock authentication - replace with real auth
-    if (email === "macescott@gmail.com" && password === "Chronos#02") {
-      return NextResponse.json({
-        user: {
-          id: "1",
-          name: "Mace Scott",
-          email: email,
-          role: "admin",
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
-          status: "active"
-        },
-        token: "mock-jwt-token"
-      })
+    // Get user by email first
+    const user = await db.get_user_by_email(email)
+    if (!user) {
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 }
+      )
     }
 
-    return NextResponse.json(
-      { error: "Invalid credentials" },
-      { status: 401 }
-    )
+    // Authenticate user with username and password
+    const authenticated = await auth_service.authenticate_user(user.username, password)
+    if (!authenticated) {
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 }
+      )
+    }
+
+    // Check if user is active
+    if (!authenticated.is_active) {
+      return NextResponse.json(
+        { error: "Account is inactive" },
+        { status: 403 }
+      )
+    }
+
+    // Generate tokens
+    const tokens = await auth_service.create_tokens(authenticated)
+
+    // Return user data and tokens
+    return NextResponse.json({
+      user: {
+        id: authenticated.id,
+        email: authenticated.email,
+        role: authenticated.role,
+        permissions: authenticated.permissions,
+        last_login: authenticated.last_login
+      },
+      ...tokens
+    })
+
   } catch (error) {
     console.error('Login error:', error)
     return NextResponse.json(
@@ -55,7 +78,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Optionally, handle GET requests with a proper error
+// Handle GET requests with a proper error
 export async function GET() {
   return NextResponse.json(
     { error: "Method not allowed" },

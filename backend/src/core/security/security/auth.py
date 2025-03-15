@@ -18,8 +18,8 @@ from ..interfaces.security import AuditInterface
 class User(BaseModel):
     """User model with role-based permissions."""
     id: int
-    username: str
     email: str
+    username: Optional[str]  # Make username optional
     role: str
     permissions: List[str]
     is_active: bool
@@ -50,18 +50,51 @@ class AuthService:
         self.refresh_token_expire = timedelta(days=7)
         
     async def authenticate_user(self,
-                              username: str,
+                              email: str,  # Changed from username to email
                               password: str
                               ) -> Optional[User]:
-        """Authenticate user credentials."""
+        """
+        Authenticate user using email and password.
+        
+        Args:
+            email: User's email address
+            password: Plain text password to verify
+            
+        Returns:
+            Optional[User]: Authenticated user or None if authentication fails
+            
+        Raises:
+            Exception: If database operation fails
+        """
         try:
-            # Get user from database
-            user_data = await self.db.get_user_by_username(username)
+            # Get user from database by email
+            user_data = await self.db.get_user_by_email(email)
             if not user_data:
+                # Log failed attempt - user not found
+                await self.audit.log_event(
+                    event_type="authentication",
+                    resource="auth",
+                    action="login_failed",
+                    details={
+                        "email": email,
+                        "reason": "user_not_found"
+                    }
+                )
                 return None
                 
-            # Verify password
-            if not self.verify_password(password, user_data["password"]):
+            # Verify password against hashed_password
+            if not self.verify_password(password, user_data["hashed_password"]):
+                # Log failed attempt - invalid password
+                await self.audit.log_event(
+                    event_type="authentication",
+                    user_id=user_data["id"],
+                    resource="auth",
+                    action="login_failed",
+                    details={
+                        "email": email,
+                        "reason": "invalid_password"
+                    }
+                )
                 return None
                 
             # Update last login
@@ -70,13 +103,13 @@ class AuthService:
             # Create user object
             user = User(**user_data)
             
-            # Log authentication
+            # Log successful authentication
             await self.audit.log_event(
                 event_type="authentication",
                 user_id=user.id,
                 resource="auth",
-                action="login",
-                details={"username": username}
+                action="login_success",
+                details={"email": email}
             )
             
             return user
@@ -89,7 +122,11 @@ class AuthService:
                        plain_password: str,
                        hashed_password: str) -> bool:
         """Verify password against hash."""
-        return self.pwd_context.verify(plain_password, hashed_password)
+        try:
+            return self.pwd_context.verify(plain_password, hashed_password)
+        except Exception as e:
+            self.logger.error(f"Password verification failed: {str(e)}")
+            return False
         
     def create_password_hash(self, password: str) -> str:
         """Create password hash."""
@@ -103,7 +140,7 @@ class AuthService:
             # Create access token
             access_token_data = {
                 "sub": str(user.id),
-                "username": user.username,
+                "email": user.email,  # Changed from username to email
                 "role": user.role,
                 "permissions": user.permissions,
                 "type": "access",
@@ -187,7 +224,7 @@ class AuthService:
             # Create new access token
             access_token_data = {
                 "sub": str(user.id),
-                "username": user.username,
+                "email": user.email,  # Changed from username to email
                 "role": user.role,
                 "permissions": user.permissions,
                 "type": "access",

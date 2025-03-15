@@ -1,22 +1,14 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Box, CircularProgress } from '@mui/material';
 import { DashboardClient } from '@/components/features/dashboard/DashboardClient';
-import { useAuth } from '../hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, isLoading, router]);
-
-  if (isLoading || !user) {
+  if (isLoading) {
     return (
       <Box
         sx={{
@@ -24,6 +16,7 @@ export default function DashboardPage() {
           justifyContent: 'center',
           alignItems: 'center',
           height: '100vh',
+          bgcolor: 'background.default',
         }}
       >
         <CircularProgress />
@@ -31,5 +24,6 @@ export default function DashboardPage() {
     );
   }
 
+  // No need to check for !user here as middleware handles the redirect
   return <DashboardClient />;
 } 

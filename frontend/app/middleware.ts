@@ -2,22 +2,11 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verify } from 'jsonwebtoken';
 
-// Define protected and public routes
-const protectedRoutes = [
-  '/dashboard',
-  '/profile',
-  '/settings',
-  '/users',
-  '/logs',
-  '/cameras',
-];
+// Routes that don't require authentication
+const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password'];
 
-const publicRoutes = [
-  '/login',
-  '/register',
-  '/forgot-password',
-  '/reset-password',
-];
+// Routes that require authentication
+const PROTECTED_ROUTES = ['/dashboard', '/admin', '/settings', '/profile'];
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
 
@@ -35,64 +24,58 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Get session cookie
-  const sessionCookie = request.cookies.get('session');
-  let isAuthenticated = false;
-  let userRole = '';
+  // Get session token from cookies
+  const session = request.cookies.get('session');
+  const isAuthenticated = !!session?.value;
 
-  if (sessionCookie) {
-    try {
-      // Verify JWT token
-      const payload = verify(sessionCookie.value, JWT_SECRET) as {
-        sub: string;
-        email: string;
-        role: string;
-        permissions: string[];
-      };
-      isAuthenticated = true;
-      userRole = payload.role;
-    } catch (error) {
-      console.error('Token validation error:', error);
-      // Invalid token, clear it
-      const response = NextResponse.redirect(new URL('/login', request.url));
-      response.cookies.delete('session');
-      return response;
-    }
-  }
+  // Check if current route is public or protected
+  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
+  const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname.startsWith(route));
 
-  // Check for authentication on protected routes
-  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
-
-  if (isProtectedRoute && !isAuthenticated) {
-    const response = NextResponse.redirect(new URL('/login', request.url));
-    response.cookies.delete('session');
-    return response;
-  }
-
-  // Redirect authenticated users away from public routes
-  if (isPublicRoute && isAuthenticated) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-
-  // Redirect root to login if not authenticated, dashboard if authenticated
+  // Handle root path
   if (pathname === '/') {
     return NextResponse.redirect(
       new URL(isAuthenticated ? '/dashboard' : '/login', request.url)
     );
   }
 
+  // Redirect authenticated users away from public routes
+  if (isAuthenticated && isPublicRoute) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Redirect unauthenticated users to login
+  if (!isAuthenticated && isProtectedRoute) {
+    const response = NextResponse.redirect(new URL('/login', request.url));
+    response.cookies.delete('session'); // Clear invalid session
+    return response;
+  }
+
   // Add user info to request headers for downstream handlers
   const response = NextResponse.next();
   if (isAuthenticated) {
-    response.headers.set('X-User-Role', userRole);
+    const payload = verify(session.value, JWT_SECRET) as {
+      sub: string;
+      email: string;
+      role: string;
+      permissions: string[];
+    };
+    response.headers.set('X-User-Role', payload.role);
   }
 
   return response;
 }
 
+// Configure which routes use this middleware
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
   ],
 }; 

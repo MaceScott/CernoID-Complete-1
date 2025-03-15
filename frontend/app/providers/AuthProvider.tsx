@@ -32,9 +32,12 @@
 
 'use client';
 
-import { createContext, useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { User, AuthContextType, LoginCredentials, ApiResponse, AuthResponse, RegisterData } from '@/lib/auth/types';
+
+// Routes that don't require authentication
+const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password'];
 
 export const AuthContext = createContext<AuthContextType>({
   user: null,
@@ -48,6 +51,7 @@ export const AuthContext = createContext<AuthContextType>({
   register: async () => ({ success: false }),
   resetPassword: async () => ({ success: false }),
   updateProfile: async () => ({ success: false }),
+  clearError: () => {},
 });
 
 /**
@@ -62,9 +66,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
 
-  const checkAuth = async () => {
+  // Clear error state
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  // Handle navigation based on auth state
+  const handleNavigation = useCallback(async (isAuthenticated: boolean) => {
+    const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
+    console.log('[AuthProvider] handleNavigation:', { 
+      isAuthenticated, 
+      isPublicRoute, 
+      currentPath: pathname 
+    });
+    
+    if (isAuthenticated && isPublicRoute) {
+      console.log('[AuthProvider] Redirecting to dashboard');
+      await router.replace('/dashboard');
+      console.log('[AuthProvider] Redirect completed');
+    } else if (!isAuthenticated && !isPublicRoute && pathname !== '/') {
+      await router.replace('/login');
+    }
+  }, [pathname, router]);
+
+  /**
+   * Checks the current authentication status
+   * - Fetches user data from /api/auth/me
+   * - Updates authentication state
+   * - Handles protected route redirections
+   */
+  const checkAuth = useCallback(async () => {
     try {
+      setIsLoading(true);
       const response = await fetch('/api/auth/me', {
         credentials: 'include',
       });
@@ -72,18 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
-        
-        // Only redirect if we're on the login page
-        if (window.location.pathname === '/login') {
-          router.replace('/dashboard');
-        }
+        await handleNavigation(true);
       } else {
         setUser(null);
-        if (window.location.pathname !== '/login' && 
-            window.location.pathname !== '/register' && 
-            window.location.pathname !== '/forgot-password') {
-          router.replace('/login');
-        }
+        await handleNavigation(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check authentication');
@@ -91,10 +118,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [handleNavigation]);
 
+  /**
+   * Handles traditional email/password login
+   * @param {LoginCredentials} credentials - User login credentials
+   * @returns {Promise<ApiResponse<AuthResponse>>} Login response with user data
+   */
   const login = async (credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> => {
     try {
+      console.log('[AuthProvider] Login started');
+      setIsLoading(true);
+      clearError();
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,26 +139,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       const data = await response.json();
+      console.log('[AuthProvider] Login response:', { 
+        ok: response.ok, 
+        status: response.status,
+        success: data.success 
+      });
 
       if (response.ok && data.success) {
+        console.log('[AuthProvider] Setting user data');
         setUser(data.user);
-        setError(null);
-        // Use replace instead of push to prevent back navigation to login
-        router.replace('/dashboard');
+        console.log('[AuthProvider] Initiating navigation');
+        await handleNavigation(true);
+        console.log('[AuthProvider] Navigation completed');
         return { success: true, data };
       } else {
+        console.log('[AuthProvider] Login failed:', data.error);
         setError(data.error || 'Login failed');
         return { success: false, error: data.error };
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      console.error('[AuthProvider] Login error:', errorMessage);
       setError(errorMessage);
       return { success: false, error: errorMessage };
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  /**
+   * Handles face recognition login
+   * @param {string} faceData - Base64 encoded face image data
+   * @returns {Promise<ApiResponse<AuthResponse>>} Login response with user data
+   */
   const loginWithFace = async (faceData: string): Promise<ApiResponse<AuthResponse>> => {
     try {
+      setIsLoading(true);
+      clearError();
+
       const response = await fetch('/api/auth/login/face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,9 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok && data.success) {
         setUser(data.user);
-        setError(null);
-        // Use replace instead of push to prevent back navigation to login
-        router.replace('/dashboard');
+        await handleNavigation(true);
         return { success: true, data };
       } else {
         setError(data.error || 'Face login failed');
@@ -146,22 +198,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const errorMessage = err instanceof Error ? err.message : 'Face login failed';
       setError(errorMessage);
       return { success: false, error: errorMessage };
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  /**
+   * Handles user logout
+   * - Clears user session
+   * - Redirects to login page
+   */
   const logout = async (): Promise<void> => {
     try {
+      setIsLoading(true);
+      clearError();
+
       await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
       });
     } finally {
       setUser(null);
-      setError(null);
-      router.replace('/login');
+      setIsLoading(false);
+      await handleNavigation(false);
     }
   };
 
+  /**
+   * Handles user registration
+   * @param {RegisterData} data - User registration data
+   * @returns {Promise<ApiResponse<AuthResponse>>} Registration response with user data
+   */
   const register = async (data: RegisterData): Promise<ApiResponse<AuthResponse>> => {
     try {
       const response = await fetch('/api/auth/register', {
@@ -189,6 +256,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /**
+   * Handles password reset request
+   * @param {string} email - User email address
+   * @returns {Promise<ApiResponse<void>>} Password reset response
+   */
   const resetPassword = async (email: string): Promise<ApiResponse<void>> => {
     try {
       const response = await fetch('/api/auth/reset-password', {
@@ -213,6 +285,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /**
+   * Updates user profile information
+   * @param {Partial<User>} data - Updated user data
+   * @returns {Promise<ApiResponse<User>>} Updated user profile
+   */
   const updateProfile = async (data: Partial<User>): Promise<ApiResponse<User>> => {
     try {
       const response = await fetch('/api/auth/profile', {
@@ -239,27 +316,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Check auth status on mount and pathname change
   useEffect(() => {
+    console.log("[AuthProvider] Initializing, checking session");
     checkAuth();
-  }, []);
+  }, [checkAuth]);
+
+  const contextValue = {
+    user,
+    isAuthenticated: !!user,
+    isLoading,
+    error,
+    login,
+    loginWithFace,
+    logout,
+    checkAuth,
+    register,
+    resetPassword,
+    updateProfile,
+    clearError,
+  };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        isLoading,
-        error,
-        login,
-        loginWithFace,
-        logout,
-        checkAuth,
-        register,
-        resetPassword,
-        updateProfile,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 } 

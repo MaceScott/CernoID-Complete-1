@@ -1,4 +1,36 @@
-"""System management routes."""
+"""
+File: system.py
+Purpose: Provides system management and monitoring endpoints for the CernoID system.
+
+Key Features:
+- System health monitoring
+- Storage usage tracking
+- Backup management
+- Resource utilization metrics
+- System configuration
+
+Dependencies:
+- FastAPI: Web framework
+- psutil: System metrics collection
+- Core services:
+  - Authentication middleware
+  - Backup service
+  - Monitoring service
+  - Logging system
+
+API Endpoints:
+- GET /metrics: System health metrics
+- GET /storage: Storage usage metrics
+- GET /backup-config: Backup configuration
+- POST /backup: Create system backup
+
+Security:
+- JWT authentication required
+- Admin-only access
+- Resource usage monitoring
+- Error handling and logging
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
 import psutil
@@ -23,7 +55,30 @@ router = APIRouter(
 async def get_system_metrics(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> SystemMetrics:
-    """Get system health metrics."""
+    """
+    Get system health and performance metrics.
+    
+    Args:
+        current_user: Authenticated user (must be admin)
+    
+    Returns:
+        SystemMetrics: System metrics including:
+            - CPU usage percentage
+            - Memory usage percentage
+            - Disk usage percentage
+            - System uptime
+            - Active user count
+            - Last update timestamp
+    
+    Raises:
+        HTTPException:
+            - 403: Not an administrator
+            - 500: Failed to collect metrics
+    
+    Security:
+        - Requires admin access
+        - Rate limited to prevent resource abuse
+    """
     if not current_user.get("is_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -56,7 +111,30 @@ async def get_system_metrics(
 async def get_storage_metrics(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> StorageMetrics:
-    """Get storage usage metrics."""
+    """
+    Get detailed storage usage metrics.
+    
+    Args:
+        current_user: Authenticated user (must be admin)
+    
+    Returns:
+        StorageMetrics: Storage metrics including:
+            - Total disk space
+            - Used disk space
+            - Available disk space
+            - Backup size and timestamp
+            - Recordings storage usage
+            - Log files storage usage
+    
+    Raises:
+        HTTPException:
+            - 403: Not an administrator
+            - 500: Failed to collect metrics
+    
+    Security:
+        - Requires admin access
+        - Monitors critical storage paths
+    """
     if not current_user.get("is_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -98,7 +176,26 @@ async def get_storage_metrics(
 async def get_backup_config(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> BackupConfig:
-    """Get backup configuration."""
+    """
+    Get system backup configuration.
+    
+    Args:
+        current_user: Authenticated user (must be admin)
+    
+    Returns:
+        BackupConfig: Backup configuration including:
+            - Backup schedule (cron format)
+            - Retention period (days)
+            - Backup storage location
+    
+    Raises:
+        HTTPException:
+            - 403: Not an administrator
+    
+    Security:
+        - Requires admin access
+        - Configuration validation
+    """
     if not current_user.get("is_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -116,7 +213,34 @@ async def get_backup_config(
 async def create_backup(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, str]:
-    """Create a system backup."""
+    """
+    Create a system backup manually.
+    
+    Args:
+        current_user: Authenticated user (must be admin)
+    
+    Returns:
+        Dict[str, str]: Backup status and message
+    
+    Raises:
+        HTTPException:
+            - 403: Not an administrator
+            - 500: Backup creation failed
+    
+    Security:
+        - Requires admin access
+        - Resource intensive operation
+        - Backup validation
+    
+    Note:
+        This is a placeholder implementation.
+        Actual implementation should:
+        1. Create a backup of the database
+        2. Archive important files (configs, models, etc.)
+        3. Store the backup in the configured location
+        4. Validate backup integrity
+        5. Update backup metrics
+    """
     if not current_user.get("is_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

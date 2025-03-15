@@ -89,50 +89,40 @@ interface ValidationErrors {
  * Includes form validation, error handling, and loading states.
  */
 export const LoginForm = () => {
-  const { login, loginWithFace } = useContext(AuthContext);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
+  const { login, loginWithFace, isLoading, error, clearError } = useContext(AuthContext);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
-  const router = useRouter();
-  const mounted = useRef(false);
-  const [showCameraDialog, setShowCameraDialog] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [credentials, setCredentials] = useState<LoginCredentials>({
     email: '',
     password: '',
   });
   const formRef = useRef<HTMLFormElement>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const router = useRouter();
+  const [showCameraDialog, setShowCameraDialog] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
 
+  // Clear form and errors on unmount
   useEffect(() => {
-    mounted.current = true;
-    // Clear form fields on mount
-    setCredentials({ email: '', password: '' });
-    // Clear any stored email from localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('lastEmail');
-    }
     return () => {
-      mounted.current = false;
-      // Cleanup camera stream if component unmounts
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+      if (formRef.current) {
+        formRef.current.reset();
       }
+      setCredentials({ email: '', password: '' });
+      clearError();
     };
-  }, []);
+  }, [clearError]);
 
   useEffect(() => {
     const loadModels = async () => {
-      try {
-        if (!window.faceapi) {
-          console.error('Face-api.js not loaded');
-          return;
-        }
+      if (!window.faceapi) {
+        console.error('Face-api.js not loaded');
+        return;
+      }
 
+      setIsLoadingModels(true);
+      try {
         const modelPath = '/models';
         
         // Check if models are already loaded
@@ -169,6 +159,8 @@ export const LoginForm = () => {
         console.error('Error loading face detection models:', err);
         setCameraError('Failed to load face detection models. Please try again later.');
         setModelsLoaded(false);
+      } finally {
+        setIsLoadingModels(false);
       }
     };
 
@@ -198,9 +190,7 @@ export const LoginForm = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setCredentials(prev => ({ ...prev, [name]: value }));
-    
-    // Clear error when user starts typing
-    setError(null);
+    clearError();
     
     // Clear validation error for the field being edited
     if (validationErrors[name as keyof ValidationErrors]) {
@@ -210,38 +200,24 @@ export const LoginForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setValidationErrors({});
-
-    if (!validateForm()) {
+    console.log('[LoginForm] Form submission started');
+    
+    if (!validateForm() || isLoading) {
+      console.log('[LoginForm] Validation failed or form is loading');
       return;
     }
 
-    setIsSubmitting(true);
-
-    try {
-      const response = await login(credentials);
-      
-      if (!response.success) {
-        setError(response.error || 'Invalid email or password');
-        setCredentials(prev => ({ ...prev, password: '' }));
-        return;
-      }
-
-      // Clear form and redirect
-      setCredentials({ email: '', password: '' });
-      router.push('/dashboard');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Invalid email or password';
-      setError(errorMessage);
-      setCredentials(prev => ({ ...prev, password: '' }));
-    } finally {
-      if (mounted.current) {
-        setIsSubmitting(false);
-      }
-    }
+    console.log('[LoginForm] Calling login with credentials:', { email: credentials.email });
+    const result = await login(credentials);
+    console.log('[LoginForm] Login result:', result);
   };
 
+  /**
+   * Handles face recognition login process
+   * - Initializes camera
+   * - Sets up face detection
+   * - Processes face data for authentication
+   */
   const handleFaceLogin = async () => {
     if (!window.faceapi) {
       setCameraError('Face detection is not available. Please try again later.');
@@ -266,70 +242,79 @@ export const LoginForm = () => {
           facingMode: 'user'
         }
       });
-      streamRef.current = stream;
-
-      if (videoRef.current && canvasRef.current) {
-        videoRef.current.srcObject = stream;
-        await new Promise((resolve) => {
-          if (videoRef.current) {
-            videoRef.current.onloadedmetadata = resolve;
-          }
-        });
-        await videoRef.current.play();
-
-        // Set up canvas dimensions
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-
-        // Start face detection loop
-        const detectFace = async () => {
-          if (!videoRef.current || !canvasRef.current || !streamRef.current) return;
-
-          try {
-            const detections = await window.faceapi.detectSingleFace(
-              videoRef.current,
-              new window.faceapi.TinyFaceDetectorOptions()
-            );
-
-            if (detections) {
-              // Draw detections
-              const ctx = canvasRef.current.getContext('2d');
-              if (ctx) {
-                ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-                window.faceapi.draw.drawDetections(canvasRef.current, [detections]);
-              }
-
-              // Capture the face image
-              const canvas = document.createElement('canvas');
-              canvas.width = videoRef.current.videoWidth;
-              canvas.height = videoRef.current.videoHeight;
-              canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-              const imageData = canvas.toDataURL('image/jpeg');
-
-              // Stop the camera
-              streamRef.current.getTracks().forEach(track => track.stop());
-              streamRef.current = null;
-
-              // Attempt face login
-              const response = await loginWithFace(imageData);
-              if (!response.success) {
-                throw new Error(response.error || 'Face login failed');
-              }
-
-              // Redirect on success
-              router.push('/dashboard');
-            } else {
-              // Continue detection if no face is found
-              requestAnimationFrame(detectFace);
-            }
-          } catch (error) {
-            console.error('Face detection error:', error);
-            throw error;
-          }
-        };
-
-        detectFace();
+      
+      if (!videoRef.current || !canvasRef.current) {
+        throw new Error('Video or canvas elements not initialized');
       }
+
+      streamRef.current = stream;
+      videoRef.current.srcObject = stream;
+
+      await new Promise<void>((resolve) => {
+        if (videoRef.current) {
+          videoRef.current.onloadedmetadata = () => resolve();
+        }
+      });
+
+      await videoRef.current.play();
+
+      // Set up canvas dimensions
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+
+      // Start face detection loop
+      const detectFace = async () => {
+        if (!videoRef.current || !canvasRef.current || !streamRef.current) {
+          throw new Error('Video or canvas elements not available');
+        }
+
+        try {
+          const detections = await window.faceapi.detectSingleFace(
+            videoRef.current,
+            new window.faceapi.TinyFaceDetectorOptions()
+          );
+
+          if (detections) {
+            // Draw detections
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx) {
+              ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+              window.faceapi.draw.drawDetections(canvasRef.current, [detections]);
+            }
+
+            // Capture the face image
+            const canvas = document.createElement('canvas');
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            const ctx2 = canvas.getContext('2d');
+            if (!ctx2) {
+              throw new Error('Failed to get canvas context');
+            }
+            ctx2.drawImage(videoRef.current, 0, 0);
+            const imageData = canvas.toDataURL('image/jpeg');
+
+            // Stop the camera
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+
+            // Attempt face login
+            const response = await loginWithFace(imageData);
+            if (!response.success) {
+              throw new Error(response.error || 'Face login failed');
+            }
+
+            await handleLoginSuccess();
+          } else {
+            // Continue detection if no face is found
+            requestAnimationFrame(detectFace);
+          }
+        } catch (error) {
+          console.error('Face detection error:', error);
+          throw error;
+        }
+      };
+
+      detectFace();
     } catch (error) {
       console.error('Face login error:', error);
       setCameraError(error instanceof Error ? error.message : 'Failed to initialize camera');
@@ -345,7 +330,11 @@ export const LoginForm = () => {
     }
   };
 
-  // Add camera dialog component
+  /**
+   * Camera Dialog Component
+   * Displays the camera feed for face recognition
+   * Includes error handling and user instructions
+   */
   const CameraDialog = () => (
     <Dialog open={showCameraDialog} onClose={() => setShowCameraDialog(false)}>
       <DialogTitle>Face Login</DialogTitle>
@@ -400,20 +389,6 @@ export const LoginForm = () => {
     </Dialog>
   );
 
-  // Add a cleanup effect to clear fields when component unmounts
-  useEffect(() => {
-    // Clear form fields on mount
-    setCredentials({ email: '', password: '' });
-    
-    return () => {
-      // Clear form fields on unmount
-      setCredentials({ email: '', password: '' });
-      if (formRef.current) {
-        formRef.current.reset();
-      }
-    };
-  }, []);
-
   return (
     <>
       <Script
@@ -423,17 +398,20 @@ export const LoginForm = () => {
           console.log('Face-api.js script loaded');
           if (window.faceapi) {
             console.log('Face-api.js loaded successfully');
-            // Trigger model loading
+            // Reset states to trigger model loading
             setModelsLoaded(false);
+            setIsLoadingModels(true);
           } else {
             console.error('Face-api.js failed to load');
             setCameraError('Failed to load face detection library');
+            setIsLoadingModels(false);
           }
         }}
         onError={(e) => {
           console.error('Error loading face-api.js:', e);
           setCameraError('Failed to load face detection library');
           setModelsLoaded(false);
+          setIsLoadingModels(false);
         }}
       />
       <MotionBox
@@ -444,104 +422,97 @@ export const LoginForm = () => {
         sx={{ width: '100%' }}
       >
         <form ref={formRef} onSubmit={handleSubmit} noValidate>
-          <TextField
-            fullWidth
-            margin="normal"
-            label="Email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            value={credentials.email}
-            onChange={handleInputChange}
-            error={!!validationErrors.email}
-            helperText={validationErrors.email}
-            required
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <EmailIcon color="action" />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ mb: 2 }}
-          />
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              label="Email"
+              name="email"
+              type="email"
+              value={credentials.email}
+              onChange={handleInputChange}
+              error={!!validationErrors.email || !!error}
+              helperText={validationErrors.email}
+              disabled={isLoading}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <EmailIcon />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
 
-          <TextField
-            fullWidth
-            margin="normal"
-            label="Password"
-            name="password"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="current-password"
-            value={credentials.password}
-            onChange={handleInputChange}
-            error={!!validationErrors.password}
-            helperText={validationErrors.password}
-            required
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <LockIcon color="action" />
-                </InputAdornment>
-              ),
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    aria-label="toggle password visibility"
-                    onClick={() => setShowPassword(!showPassword)}
-                    edge="end"
-                  >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-            sx={{ mb: 2 }}
-          />
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              label="Password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              value={credentials.password}
+              onChange={handleInputChange}
+              error={!!validationErrors.password || !!error}
+              helperText={validationErrors.password}
+              disabled={isLoading}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LockIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      disabled={isLoading}
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mb: 3 }}>
               {error}
             </Alert>
           )}
 
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+            <Button
+              component={Link}
+              href="/forgot-password"
+              variant="text"
+              disabled={isLoading}
+            >
+              Forgot Password?
+            </Button>
+            <Button
+              component={Link}
+              href="/register"
+              variant="text"
+              disabled={isLoading}
+            >
+              Create Account
+            </Button>
+          </Box>
+
           <Button
+            type="submit"
             fullWidth
             variant="contained"
-            color="primary"
-            type="submit"
-            disabled={isSubmitting}
+            disabled={isLoading}
             sx={{ mb: 2 }}
           >
-            {isSubmitting ? <CircularProgress size={24} /> : 'Sign In'}
+            {isLoading ? (
+              <CircularProgress size={24} color="inherit" />
+            ) : (
+              'Sign In'
+            )}
           </Button>
-
-          <Divider sx={{ my: 2 }}>OR</Divider>
-
-          <Button
-            fullWidth
-            variant="outlined"
-            color="primary"
-            onClick={handleFaceLogin}
-            disabled={isSubmitting || !modelsLoaded}
-            startIcon={<FaceIcon />}
-            sx={{ mb: 2 }}
-          >
-            {!modelsLoaded ? 'Loading Face Detection...' : 'Sign In with Face ID'}
-          </Button>
-
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-            <Link href="/forgot-password" passHref>
-              <MuiLink variant="body2">
-                Forgot password?
-              </MuiLink>
-            </Link>
-            <Link href="/register" passHref>
-              <MuiLink variant="body2">
-                Don't have an account? Sign Up
-              </MuiLink>
-            </Link>
-          </Box>
         </form>
 
         <CameraDialog />

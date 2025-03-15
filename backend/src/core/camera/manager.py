@@ -1,3 +1,40 @@
+"""
+High-level camera management system for CernoID.
+
+This module provides the CameraManager class which serves as the central hub for managing
+multiple camera feeds, handling frame processing, and coordinating subscriber notifications.
+
+Key Features:
+- Multi-camera management with dynamic add/remove capabilities
+- Asynchronous frame processing pipeline with configurable frame rates and resolutions
+- Real-time frame distribution to subscribers via WebSocket
+- Automatic frame preprocessing and format standardization
+- Performance monitoring and statistics tracking
+- Resource management and cleanup
+- Error handling and recovery mechanisms
+
+Dependencies:
+- OpenCV (cv2): Video capture and frame processing
+- NumPy: Frame data manipulation
+- AsyncIO: Asynchronous operations and queues
+- BaseComponent: Core component functionality
+- WebSocket: Real-time frame distribution
+
+Architecture:
+- Event-driven design with asynchronous processing
+- Publisher-subscriber pattern for frame distribution
+- Queue-based frame processing pipeline
+- Component-based architecture with dependency injection
+- Error boundary implementation with graceful degradation
+
+Performance:
+- Configurable frame rates and buffer sizes
+- Automatic frame dropping on queue overflow
+- Memory-efficient frame processing
+- Optimized frame encoding for network transmission
+- Real-time performance monitoring
+"""
+
 from typing import Dict, Optional, List, Union
 import cv2
 import numpy as np
@@ -8,9 +45,38 @@ from ..base import BaseComponent
 from ..utils.errors import CameraError
 
 class CameraManager(BaseComponent):
-    """Camera feed management system"""
+    """
+    Central manager for camera operations in CernoID.
+    
+    Handles camera lifecycle management, frame processing, and subscriber notifications.
+    Provides a high-level interface for adding, removing, and accessing cameras while
+    managing frame processing queues and performance monitoring.
+    
+    Attributes:
+        _cameras (Dict[str, Camera]): Active camera instances mapped by ID
+        _frame_rate (int): Target frame rate for processing
+        _resolution (tuple): Target resolution for processed frames
+        _buffer_size (int): Maximum size of frame buffer queue
+        _processing (bool): Current processing state
+        _frame_queue (asyncio.Queue): Queue for frame processing
+        _subscribers (Dict[str, List[str]]): Active subscribers per camera
+        _storage_path (Path): Path for frame storage
+        _stats (Dict): Performance monitoring statistics
+    
+    Configuration:
+        camera.frame_rate (int): Target FPS (default: 30)
+        camera.resolution (str): Target resolution 'WxH' (default: '1280x720')
+        camera.buffer_size (int): Frame buffer size (default: 100)
+        camera.storage_path (str): Frame storage location (default: 'data/frames')
+    """
     
     def __init__(self, config: dict):
+        """
+        Initialize the camera manager with configuration.
+        
+        Args:
+            config (dict): Configuration dictionary containing camera settings
+        """
         super().__init__(config)
         # Camera settings
         self._cameras: Dict[str, 'Camera'] = {}
@@ -49,7 +115,21 @@ class CameraManager(BaseComponent):
                         camera_id: str,
                         source: Union[str, int],
                         name: Optional[str] = None) -> None:
-        """Add new camera"""
+        """
+        Add and initialize a new camera feed.
+        
+        Args:
+            camera_id (str): Unique identifier for the camera
+            source (Union[str, int]): Camera source (URL, device ID, or file path)
+            name (Optional[str]): Human-readable camera name
+            
+        Raises:
+            CameraError: If camera already exists or initialization fails
+            
+        Events:
+            - camera.added: When camera is successfully added
+            - camera.error: When camera addition fails
+        """
         try:
             if camera_id in self._cameras:
                 raise CameraError(f"Camera {camera_id} already exists")
@@ -79,7 +159,19 @@ class CameraManager(BaseComponent):
             raise CameraError(f"Failed to add camera: {str(e)}")
 
     async def remove_camera(self, camera_id: str) -> None:
-        """Remove camera"""
+        """
+        Remove and cleanup a camera feed.
+        
+        Args:
+            camera_id (str): ID of camera to remove
+            
+        Raises:
+            CameraError: If camera not found or removal fails
+            
+        Events:
+            - camera.removed: When camera is successfully removed
+            - camera.error: When camera removal fails
+        """
         try:
             if camera_id not in self._cameras:
                 raise CameraError(f"Camera {camera_id} not found")
@@ -100,7 +192,19 @@ class CameraManager(BaseComponent):
     async def get_frame(self,
                        camera_id: str,
                        timestamp: Optional[float] = None) -> Optional[np.ndarray]:
-        """Get camera frame"""
+        """
+        Retrieve a frame from specified camera.
+        
+        Args:
+            camera_id (str): ID of target camera
+            timestamp (Optional[float]): Specific frame timestamp to retrieve
+            
+        Returns:
+            Optional[np.ndarray]: Frame data if available, None otherwise
+            
+        Raises:
+            CameraError: If camera not found or frame retrieval fails
+        """
         try:
             if camera_id not in self._cameras:
                 raise CameraError(f"Camera {camera_id} not found")
@@ -123,16 +227,28 @@ class CameraManager(BaseComponent):
             raise CameraError(f"Failed to subscribe: {str(e)}")
 
     async def unsubscribe(self, camera_id: str, subscriber_id: str) -> None:
-        """Unsubscribe from camera feed"""
-        try:
-            if camera_id in self._subscribers:
-                self._subscribers[camera_id].remove(subscriber_id)
+            """Unsubscribe from camera feed"""
+            try:
+                if camera_id in self._subscribers:
+                    self._subscribers[camera_id].remove(subscriber_id)
             
-        except Exception as e:
-            raise CameraError(f"Failed to unsubscribe: {str(e)}")
+            except Exception as e:
+                raise CameraError(f"Failed to unsubscribe: {str(e)}")
 
     async def _process_frames(self, camera: 'Camera') -> None:
-        """Process camera frames"""
+        """
+        Process frames from a camera feed.
+        
+        Handles frame acquisition, preprocessing, and queueing for distribution.
+        Implements frame rate control and tracks processing statistics.
+        
+        Args:
+            camera (Camera): Camera instance to process
+            
+        Events:
+            - frame.processed: When frame is successfully processed
+            - frame.dropped: When frame is dropped due to queue overflow
+        """
         try:
             while camera.is_running:
                 start_time = datetime.utcnow()
@@ -165,7 +281,13 @@ class CameraManager(BaseComponent):
             self.logger.error(f"Frame processing error: {str(e)}")
 
     async def _frame_processor(self) -> None:
-        """Process frames from queue"""
+        """
+        Main frame processing loop.
+        
+        Continuously processes frames from the queue, applying transformations
+        and distributing to subscribers. Handles errors gracefully to maintain
+        processing pipeline integrity.
+        """
         while True:
             try:
                 # Get frame from queue
@@ -186,7 +308,18 @@ class CameraManager(BaseComponent):
                 await asyncio.sleep(1)
 
     async def _process_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Process single frame"""
+        """
+        Apply processing transformations to a single frame.
+        
+        Performs resolution adjustment, color space conversion, and any
+        additional preprocessing required before distribution.
+        
+        Args:
+            frame (np.ndarray): Raw frame data
+            
+        Returns:
+            np.ndarray: Processed frame data
+        """
         try:
             # Basic preprocessing
             processed = cv2.resize(
@@ -211,7 +344,21 @@ class CameraManager(BaseComponent):
                                 camera_id: str,
                                 frame: np.ndarray,
                                 timestamp: float) -> None:
-        """Notify camera subscribers"""
+        """
+        Distribute processed frame to subscribers.
+        
+        Encodes frame data and broadcasts to all subscribers of the specified
+        camera through WebSocket connections.
+        
+        Args:
+            camera_id (str): Source camera ID
+            frame (np.ndarray): Processed frame data
+            timestamp (float): Frame timestamp
+            
+        Events:
+            - frame.broadcast: When frame is sent to subscribers
+            - subscriber.error: When notification fails
+        """
         try:
             if camera_id in self._subscribers:
                 # Encode frame
@@ -242,7 +389,16 @@ class CameraManager(BaseComponent):
             self.logger.error(f"Subscriber notification error: {str(e)}")
 
     async def initialize(self) -> None:
-        """Initialize camera manager"""
+        """
+        Initialize the camera manager system.
+        
+        Sets up frame processing pipeline, loads configured cameras,
+        and starts background tasks.
+        
+        Events:
+            - manager.initialized: When initialization completes
+            - manager.error: If initialization fails
+        """
         try:
             # Start frame processor
             asyncio.create_task(self._frame_processor())
@@ -260,7 +416,17 @@ class CameraManager(BaseComponent):
             raise CameraError(f"Initialization failed: {str(e)}")
 
     async def cleanup(self) -> None:
-        """Cleanup camera manager"""
+        """
+        Perform cleanup operations for the camera manager.
+        
+        Stops all active cameras, releases resources, and performs necessary
+        cleanup operations before shutdown.
+        
+        Events:
+            - manager.cleanup.started: When cleanup begins
+            - manager.cleanup.completed: When cleanup finishes
+            - manager.cleanup.error: If cleanup encounters errors
+        """
         try:
             # Stop all cameras
             for camera_id in list(self._cameras.keys()):
@@ -270,5 +436,16 @@ class CameraManager(BaseComponent):
             self.logger.error(f"Cleanup error: {str(e)}")
 
     async def get_stats(self) -> Dict:
-        """Get camera statistics"""
+        """
+        Retrieve current performance statistics.
+        
+        Returns a copy of the statistics dictionary containing:
+            - active_cameras: Number of currently active cameras
+            - frames_processed: Total number of frames processed
+            - processing_time: Cumulative processing time in seconds
+            - dropped_frames: Number of frames dropped due to queue overflow
+        
+        Returns:
+            Dict: Copy of current statistics
+        """
         return self._stats.copy() 

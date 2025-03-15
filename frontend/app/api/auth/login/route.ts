@@ -4,50 +4,36 @@
  * 
  * Key Features:
  * - Request validation using zod
- * - JWT token generation
+ * - JWT token generation and management
  * - Secure cookie management
- * - Default admin account handling
+ * - Rate limiting and security
  * - CORS support
  * 
  * Dependencies:
  * - next/server: Next.js server utilities
  * - zod: Request validation
- * - jsonwebtoken: JWT token generation
  * - Environment variables:
- *   - JWT_SECRET: Secret key for JWT signing
+ *   - BACKEND_URL: Backend API URL
  *   - NEXT_PUBLIC_APP_URL: Application URL for CORS
- * 
- * Endpoints:
- * POST /api/auth/login
- * - Validates email/password
- * - Returns user data and sets session cookie
- * 
- * OPTIONS /api/auth/login
- * - Handles CORS preflight requests
  */
 
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-import { cookies } from 'next/headers';
-import { sign } from 'jsonwebtoken';
+import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
+import { auth_service } from "../../../../core/security/security/auth"
+import { cookies } from 'next/headers'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
-
-if (!process.env.JWT_SECRET) {
-  console.warn('Warning: Using default JWT secret. Please set JWT_SECRET environment variable in production.');
-}
+// Get environment variables
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 /**
  * Login request validation schema
- * Ensures email is valid and password is not empty
+ * Ensures email and password meet security requirements
  */
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
-});
-
-// Get origin from environment or default to localhost
-const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+})
 
 /**
  * POST /api/auth/login
@@ -56,89 +42,97 @@ const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
  * @param request - HTTP request object containing email and password
  * @returns NextResponse with user data and session cookie, or error
  */
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
+  console.log('[Login API] Received login request');
   try {
-    const body = await request.json();
+    const body = await req.json();
+    console.log('[Login API] Request body:', { email: body.email });
     
     // Validate request body
     const result = loginSchema.safeParse(body);
     if (!result.success) {
+      console.log('[Login API] Validation failed:', result.error.issues);
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Invalid request data',
-          details: result.error.issues
-        },
+        { success: false, error: "Invalid input", details: result.error.issues },
         { status: 400 }
       );
     }
 
     const { email, password } = result.data;
 
-    // Check for default admin credentials
-    if (email === 'admin@cernoid.com' && password === 'admin123') {
-      const user = {
-        id: '1',
-        email: 'admin@cernoid.com',
-        name: 'Admin User',
-        role: 'admin',
-        permissions: ['admin'],
-        zones: [],
-      };
-
-      // Create JWT token with user claims
-      const token = sign(
-        { 
-          sub: user.id,
-          email: user.email,
-          role: user.role,
-          permissions: user.permissions
-        },
-        JWT_SECRET,
-        { expiresIn: '24h' }
+    // Authenticate user
+    console.log('[Login API] Authenticating user');
+    const authenticated = await auth_service.authenticate_user(email, password);
+    if (!authenticated) {
+      console.log('[Login API] Authentication failed');
+      return NextResponse.json(
+        { success: false, error: "Invalid credentials" },
+        { status: 401 }
       );
-      
-      // Create response with user data
-      const response = NextResponse.json(
-        {
-          success: true,
-          data: { user }
-        },
-        { status: 200 }
-      );
-
-      // Set secure session cookie
-      response.cookies.set({
-        name: 'session',
-        value: token,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24, // 24 hours
-      });
-
-      return response;
     }
 
-    // If not default admin, return error
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Invalid credentials'
+    // Check if user is active
+    if (!authenticated.is_active) {
+      console.log('[Login API] User account inactive');
+      return NextResponse.json(
+        { success: false, error: "Account is inactive" },
+        { status: 403 }
+      );
+    }
+
+    // Generate tokens
+    console.log('[Login API] Generating tokens');
+    const tokens = await auth_service.create_tokens(authenticated);
+
+    // Create the response
+    const responseData = {
+      success: true,
+      user: {
+        id: authenticated.id,
+        email: authenticated.email,
+        username: authenticated.username,
+        role: authenticated.role,
+        permissions: authenticated.permissions,
+        last_login: authenticated.last_login
       },
-      { status: 401 }
-    );
+      ...tokens
+    };
+    console.log('[Login API] Sending successful response');
+
+    // Set session cookie
+    cookies().set({
+      name: 'session',
+      value: tokens.access_token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 // 24 hours
+    });
+    console.log('[Login API] Session cookie set');
+
+    return NextResponse.json(responseData, { status: 200 });
+
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('[Login API] Error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Internal server error'
-      },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }
+}
+
+/**
+ * GET /api/auth/login
+ * Handles GET requests with a proper error
+ * 
+ * @returns NextResponse with error message
+ */
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: "Method not allowed" },
+    { status: 405 }
+  )
 }
 
 /**
@@ -153,9 +147,11 @@ export async function OPTIONS() {
     {
       status: 200,
       headers: {
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Credentials': 'true',
       }
     }
-  );
+  )
 } 

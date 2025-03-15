@@ -1,5 +1,37 @@
 """
-Unified face recognition system with centralized error handling, GPU support, and optimized performance.
+File: core.py
+Purpose: Provides a unified face recognition system with GPU support and optimized performance.
+
+Key Features:
+- Face detection and recognition
+- Face feature extraction
+- Face matching and verification
+- Quality assessment
+- Pose estimation
+- Attribute analysis (age, gender, expression)
+- Distance estimation
+- GPU acceleration
+- Caching and performance optimization
+
+Dependencies:
+- OpenCV: Image processing
+- dlib: Face detection and recognition
+- PyTorch: Deep learning operations
+- NumPy: Array operations
+- Core services:
+  - Event management
+  - Error handling
+  - Configuration
+  - Database
+  - Monitoring
+  - Performance measurement
+
+Configuration:
+- Model paths and URLs
+- Performance thresholds
+- Cache settings
+- GPU settings
+- Quality thresholds
 """
 
 from typing import List, Optional, Dict, Union, Any, Tuple
@@ -38,18 +70,29 @@ from ..utils.errors import handle_errors
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Get the path to the local cascade classifier and dlib models
+# Model paths and URLs
 CASCADE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'haarcascade_frontalface_default.xml')
 DLIB_FACE_RECOGNITION_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'data', 'dlib_face_recognition_resnet_model_v1.dat')
 DLIB_SHAPE_PREDICTOR_PATH = os.path.join(os.path.dirname(__file__), 'data', 'shape_predictor_68_face_landmarks.dat')
 
-# URLs for downloading dlib models
+# Model download URLs
 DLIB_FACE_RECOGNITION_MODEL_URL = "https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2"
 DLIB_SHAPE_PREDICTOR_URL = "https://github.com/davisking/dlib-models/raw/master/shape_predictor_68_face_landmarks.dat.bz2"
 
 @dataclass
 class FaceFeatures:
-    """Extracted face features"""
+    """
+    Extracted face features and attributes.
+    
+    Attributes:
+        embedding: Face embedding vector
+        landmarks: Facial landmark points
+        quality: Face quality score
+        pose: Face pose angles (yaw, pitch, roll)
+        expression: Detected facial expression
+        age: Estimated age
+        gender: Detected gender
+    """
     embedding: np.ndarray
     landmarks: np.ndarray
     quality: float
@@ -60,7 +103,18 @@ class FaceFeatures:
 
 @dataclass
 class FaceDetection:
-    """Face detection result"""
+    """
+    Face detection result with metadata.
+    
+    Attributes:
+        bbox: Bounding box coordinates
+        confidence: Detection confidence score
+        frame_index: Frame index in video
+        face_image: Cropped face image
+        landmarks: Optional facial landmarks
+        features: Optional extracted features
+        distance: Optional estimated distance
+    """
     bbox: tuple[int, int, int, int]
     confidence: float
     frame_index: int
@@ -71,16 +125,36 @@ class FaceDetection:
 
 @dataclass
 class FaceMatch:
-    """Face matching result"""
+    """
+    Face matching result with confidence score.
+    
+    Attributes:
+        user_id: Matched user ID
+        confidence: Match confidence score
+        metadata: Optional additional metadata
+    """
     user_id: str
     confidence: float
     metadata: Optional[Dict] = None
 
 class FaceRecognitionSystem(BaseComponent):
-    """Unified face recognition system with GPU support"""
+    """
+    Unified face recognition system with GPU support.
+    
+    Features:
+    - Face detection and recognition
+    - Feature extraction and matching
+    - Quality assessment
+    - Performance optimization
+    - GPU acceleration
+    - Caching
+    """
     
     def __init__(self):
-        """Initialize face recognition system."""
+        """
+        Initialize face recognition system.
+        Sets up configuration, services, and GPU settings.
+        """
         super().__init__()
         self.config = settings
         self.event_manager = event_manager
@@ -88,13 +162,25 @@ class FaceRecognitionSystem(BaseComponent):
         self.is_initialized = False
         self._initializing = False
         
-        # GPU configuration - disabled for now since we're using dlib
+        # GPU configuration
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {self.device}")
 
     @handle_errors
     async def initialize(self) -> None:
-        """Initialize the face recognition system."""
+        """
+        Initialize the face recognition system.
+        
+        Steps:
+        1. Create data directory
+        2. Download and prepare models
+        3. Initialize components (detector, encoder, landmark detector)
+        4. Set up caching and performance settings
+        5. Initialize monitoring and statistics
+        
+        Raises:
+            Exception: If initialization fails
+        """
         if self.is_initialized:
             logger.info("Face recognition system already initialized")
             return
@@ -185,7 +271,18 @@ class FaceRecognitionSystem(BaseComponent):
 
     @handle_errors
     async def cleanup(self) -> None:
-        """Cleanup face recognition system resources."""
+        """
+        Cleanup face recognition system resources.
+        
+        Steps:
+        1. Clear caches
+        2. Clear processing queue
+        3. Release GPU memory
+        4. Reset initialization state
+        
+        Raises:
+            Exception: If cleanup fails
+        """
         if not self.is_initialized:
             logger.info("Face recognition system not initialized, nothing to clean up")
             return
@@ -215,7 +312,17 @@ class FaceRecognitionSystem(BaseComponent):
             raise
 
     async def _download_and_prepare_models(self):
-        """Download and prepare required models if they don't exist."""
+        """
+        Download and prepare required models if they don't exist.
+        
+        Downloads:
+        - Cascade classifier
+        - dlib face recognition model
+        - Shape predictor model
+        
+        Raises:
+            Exception: If model download or preparation fails
+        """
         try:
             # Download cascade classifier if it doesn't exist
             if not os.path.exists(CASCADE_PATH):
@@ -262,7 +369,12 @@ class FaceRecognitionSystem(BaseComponent):
             raise
 
     async def _init_detector(self) -> cv2.CascadeClassifier:
-        """Initialize face detector using OpenCV Haar Cascade"""
+        """
+        Initialize face detector.
+        
+        Returns:
+            cv2.CascadeClassifier: Initialized face detector
+        """
         try:
             detector = cv2.CascadeClassifier(CASCADE_PATH)
             if detector.empty():
@@ -273,7 +385,12 @@ class FaceRecognitionSystem(BaseComponent):
             raise
 
     async def _init_encoder(self) -> 'dlib.face_recognition_model_v1':
-        """Initialize face encoder using dlib"""
+        """
+        Initialize face encoder.
+        
+        Returns:
+            dlib.face_recognition_model_v1: Initialized face encoder
+        """
         try:
             return dlib.face_recognition_model_v1(DLIB_FACE_RECOGNITION_MODEL_PATH)
         except Exception as e:
@@ -281,7 +398,12 @@ class FaceRecognitionSystem(BaseComponent):
             raise
 
     async def _init_landmark_detector(self) -> 'dlib.shape_predictor':
-        """Initialize facial landmark detection using dlib"""
+        """
+        Initialize facial landmark detector.
+        
+        Returns:
+            dlib.shape_predictor: Initialized landmark detector
+        """
         try:
             return dlib.shape_predictor(DLIB_SHAPE_PREDICTOR_PATH)
         except Exception as e:
@@ -289,7 +411,12 @@ class FaceRecognitionSystem(BaseComponent):
             raise
 
     async def _load_model(self):
-        """Load face recognition model."""
+        """
+        Load face recognition model.
+        
+        Returns:
+            Loaded model instance
+        """
         # TODO: Implement model loading
         pass
 
@@ -299,14 +426,14 @@ class FaceRecognitionSystem(BaseComponent):
                           image_data: Union[str, np.ndarray],
                           options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Process image for face detection and recognition
+        Process an image for face detection and recognition.
         
         Args:
-            image_data: Image as base64 string or numpy array
-            options: Processing options
+            image_data: Image data (base64 string or numpy array)
+            options: Optional processing options
             
         Returns:
-            Dictionary with faces, features and processing time
+            Dict containing processing results
         """
         try:
             start_time = datetime.utcnow()
@@ -341,7 +468,15 @@ class FaceRecognitionSystem(BaseComponent):
             raise
 
     async def process_face(self, face_img: np.ndarray) -> Optional[FaceFeatures]:
-        """Process face and extract features"""
+        """
+        Process a single face image to extract features.
+        
+        Args:
+            face_img: Face image array
+            
+        Returns:
+            Optional[FaceFeatures]: Extracted face features
+        """
         try:
             # Preprocess image
             face_tensor = self._preprocess_face(face_img)
@@ -387,7 +522,15 @@ class FaceRecognitionSystem(BaseComponent):
             return None
 
     def _decode_image(self, image_data: str) -> np.ndarray:
-        """Decode base64 image to numpy array"""
+        """
+        Decode base64 image data to numpy array.
+        
+        Args:
+            image_data: Base64 encoded image string
+            
+        Returns:
+            np.ndarray: Decoded image array
+        """
         try:
             # Remove data URL prefix if present
             if "base64," in image_data:
@@ -412,7 +555,15 @@ class FaceRecognitionSystem(BaseComponent):
     @handle_errors
     @measure_performance()
     async def detect_faces(self, image: np.ndarray) -> List[Dict[str, Any]]:
-        """Detect faces in image."""
+        """
+        Detect faces in an image.
+        
+        Args:
+            image: Input image array
+            
+        Returns:
+            List of face detection results
+        """
         # Convert to grayscale
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
@@ -437,14 +588,32 @@ class FaceRecognitionSystem(BaseComponent):
     @handle_errors
     @measure_performance()
     async def get_face_encoding(self, image: np.ndarray, face_bbox: Tuple[int, int, int, int]) -> np.ndarray:
-        """Get face encoding."""
+        """
+        Get face encoding for a detected face.
+        
+        Args:
+            image: Input image array
+            face_bbox: Face bounding box coordinates
+            
+        Returns:
+            np.ndarray: Face encoding vector
+        """
         # TODO: Implement face encoding
         pass
 
     @handle_errors
     @measure_performance()
     async def verify_face(self, image: np.ndarray, username: str) -> Optional[Dict[str, Any]]:
-        """Verify face against stored encoding."""
+        """
+        Verify a face against a stored template.
+        
+        Args:
+            image: Input face image
+            username: Username to verify against
+            
+        Returns:
+            Optional[Dict]: Verification result with confidence
+        """
         try:
             # Detect faces
             faces = await self.detect_faces(image)
@@ -476,7 +645,16 @@ class FaceRecognitionSystem(BaseComponent):
     @handle_errors
     @measure_performance()
     async def register_face(self, image: np.ndarray, user_id: int) -> bool:
-        """Register face encoding."""
+        """
+        Register a new face template.
+        
+        Args:
+            image: Face image to register
+            user_id: User ID to associate with face
+            
+        Returns:
+            bool: Success status
+        """
         try:
             # Detect faces
             faces = await self.detect_faces(image)
@@ -498,12 +676,29 @@ class FaceRecognitionSystem(BaseComponent):
             return False
 
     def _compare_encodings(self, encoding1: np.ndarray, encoding2: np.ndarray) -> float:
-        """Compare two face encodings."""
+        """
+        Compare two face encodings.
+        
+        Args:
+            encoding1: First face encoding
+            encoding2: Second face encoding
+            
+        Returns:
+            float: Similarity score
+        """
         # TODO: Implement encoding comparison
         pass
 
     def _preprocess_face(self, face_img: np.ndarray) -> Optional[torch.Tensor]:
-        """Preprocess face image"""
+        """
+        Preprocess face image for feature extraction.
+        
+        Args:
+            face_img: Input face image
+            
+        Returns:
+            Optional[torch.Tensor]: Preprocessed face tensor
+        """
         try:
             # Resize image
             face_img = cv2.resize(face_img, (self._face_size, self._face_size))
@@ -531,7 +726,15 @@ class FaceRecognitionSystem(BaseComponent):
             return None
 
     async def _estimate_pose(self, landmarks: np.ndarray) -> Tuple[float, float, float]:
-        """Estimate face pose from landmarks"""
+        """
+        Estimate face pose from landmarks.
+        
+        Args:
+            landmarks: Facial landmark points
+            
+        Returns:
+            Tuple[float, float, float]: Pose angles (yaw, pitch, roll)
+        """
         try:
             # Convert landmarks to 3D points
             model_points = self._get_3d_model_points()
@@ -560,7 +763,12 @@ class FaceRecognitionSystem(BaseComponent):
             return (0.0, 0.0, 0.0)
 
     def _get_3d_model_points(self) -> np.ndarray:
-        """Get 3D facial landmark model points"""
+        """
+        Get 3D model points for pose estimation.
+        
+        Returns:
+            np.ndarray: 3D model points
+        """
         return np.array([
             (0.0, 0.0, 0.0),             # Nose tip
             (0.0, -330.0, -65.0),        # Chin
@@ -571,7 +779,12 @@ class FaceRecognitionSystem(BaseComponent):
         ])
 
     def _get_camera_matrix(self) -> np.ndarray:
-        """Get camera calibration matrix"""
+        """
+        Get camera matrix for pose estimation.
+        
+        Returns:
+            np.ndarray: Camera matrix
+        """
         size = self._face_size
         center = size / 2
         focal_length = center / np.tan(60/2 * np.pi / 180)
@@ -585,7 +798,16 @@ class FaceRecognitionSystem(BaseComponent):
     async def _analyze_quality(self,
                              face_img: np.ndarray,
                              landmarks: np.ndarray) -> float:
-        """Analyze face quality"""
+        """
+        Analyze face image quality.
+        
+        Args:
+            face_img: Face image
+            landmarks: Facial landmarks
+            
+        Returns:
+            float: Quality score
+        """
         try:
             # Check face size
             height, width = face_img.shape[:2]
@@ -619,7 +841,15 @@ class FaceRecognitionSystem(BaseComponent):
             return 0.0
 
     async def _analyze_attributes(self, face_tensor: torch.Tensor) -> Dict:
-        """Analyze facial attributes"""
+        """
+        Analyze face attributes (age, gender, expression).
+        
+        Args:
+            face_tensor: Preprocessed face tensor
+            
+        Returns:
+            Dict: Analyzed attributes
+        """
         try:
             with torch.no_grad():
                 attributes = self._attribute_analyzer(face_tensor)
@@ -638,13 +868,29 @@ class FaceRecognitionSystem(BaseComponent):
             return {}
 
     def _get_expression(self, attributes: torch.Tensor) -> str:
-        """Get facial expression from attributes"""
+        """
+        Get facial expression from attributes.
+        
+        Args:
+            attributes: Face attributes tensor
+            
+        Returns:
+            str: Detected expression
+        """
         expressions = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'fearful', 'disgusted']
         idx = torch.argmax(attributes[:7]).item()
         return expressions[idx]
 
     def _estimate_age(self, attributes: torch.Tensor) -> Optional[float]:
-        """Estimate age from attributes"""
+        """
+        Estimate age from face attributes.
+        
+        Args:
+            attributes: Face attributes tensor
+            
+        Returns:
+            Optional[float]: Estimated age
+        """
         try:
             age = attributes[7].item() * 100  # Scale to years
             return float(np.clip(age, 0, 100))
@@ -652,14 +898,27 @@ class FaceRecognitionSystem(BaseComponent):
             return None
 
     def _detect_gender(self, attributes: torch.Tensor) -> Optional[str]:
-        """Detect gender from attributes"""
+        """
+        Detect gender from face attributes.
+        
+        Args:
+            attributes: Face attributes tensor
+            
+        Returns:
+            Optional[str]: Detected gender
+        """
         try:
             return 'male' if attributes[8].item() > 0.5 else 'female'
         except:
             return None
 
     def _update_stats(self, quality: float) -> None:
-        """Update processing statistics"""
+        """
+        Update system statistics.
+        
+        Args:
+            quality: Face quality score
+        """
         self._stats['faces_processed'] += 1
         self._stats['features_extracted'] += 1
         
@@ -671,7 +930,15 @@ class FaceRecognitionSystem(BaseComponent):
     @handle_errors
     @measure_performance()
     async def encode_faces(self, detections: List[FaceDetection]) -> List[np.ndarray]:
-        """Generate encodings for detected faces with optimized GPU acceleration"""
+        """
+        Encode multiple detected faces.
+        
+        Args:
+            detections: List of face detections
+            
+        Returns:
+            List[np.ndarray]: Face encodings
+        """
         encodings = []
         batch_tensors = []
         cached_indices = []
@@ -725,13 +992,13 @@ class FaceRecognitionSystem(BaseComponent):
     @measure_performance()
     async def find_matches(self, encoding: np.ndarray) -> List[FaceMatch]:
         """
-        Find matches for a face encoding with optimized similarity search
+        Find matching faces for an encoding.
         
         Args:
             encoding: Face encoding to match
             
         Returns:
-            List of FaceMatch objects sorted by confidence
+            List[FaceMatch]: Matching results
         """
         async with self.db_pool.get_connection() as conn:
             # Get stored encodings with optimized query
@@ -760,14 +1027,19 @@ class FaceRecognitionSystem(BaseComponent):
             return matches
 
     def clear_caches(self) -> None:
-        """Clear all internal caches"""
+        """Clear all system caches."""
         self._encoding_cache.clear()
         self._compute_detection_confidence.cache_clear()
 
     def _estimate_distance(self, face_width_pixels: float) -> float:
         """
-        Estimate distance to face using known face width and focal length
-        Uses the formula: Distance = (Known Width × Focal Length) / Pixel Width
+        Estimate face distance from camera.
+        
+        Args:
+            face_width_pixels: Face width in pixels
+            
+        Returns:
+            float: Estimated distance in meters
         """
         try:
             distance = (self._avg_face_width * self._focal_length) / face_width_pixels
@@ -776,7 +1048,7 @@ class FaceRecognitionSystem(BaseComponent):
             return float('inf')
 
     def _load_tts_responses(self):
-        """Load TTS response templates from configuration."""
+        """Load text-to-speech responses."""
         try:
             tts_config_path = self.config.tts_responses_path
             with open(tts_config_path, 'r') as file:
@@ -785,6 +1057,7 @@ class FaceRecognitionSystem(BaseComponent):
             logger.error(f"Error loading TTS responses: {e}")
 
 def play_response(event):
+    """Play audio response for an event."""
     tts_config_path = settings.tts_responses_path
     with open(tts_config_path, 'r') as file:
         responses = json.load(file)

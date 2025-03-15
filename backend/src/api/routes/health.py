@@ -1,6 +1,36 @@
 """
-Health check endpoints for system monitoring.
+File: health.py
+Purpose: Provides health check endpoints for monitoring the CernoID system's operational status.
+
+Key Features:
+- Basic liveness probe
+- Component readiness checks
+- System resource monitoring
+- Database health verification
+- GPU status monitoring
+- Storage system checks
+
+Dependencies:
+- FastAPI: Web framework
+- psutil: System metrics collection
+- PyTorch: GPU monitoring
+- Core services:
+  - DatabaseService: Database connectivity
+  - Configuration management
+  - Logging system
+
+API Endpoints:
+- GET /health/live: Basic liveness probe
+- GET /health/ready: Comprehensive readiness check
+
+Monitoring:
+- Database connectivity and performance
+- GPU availability and memory usage
+- System resource utilization
+- Storage system availability
+- Component health aggregation
 """
+
 from fastapi import APIRouter, HTTPException, status
 from typing import Dict, Any
 import psutil
@@ -19,13 +49,39 @@ logger = get_logger(__name__)
 
 @router.get("/live")
 async def liveness_check() -> Dict[str, str]:
-    """Basic liveness check."""
+    """
+    Basic liveness probe endpoint.
+    
+    Returns:
+        Dict[str, str]: Simple alive status
+        
+    Note:
+        This is a lightweight check that should return quickly.
+        Used by container orchestrators and load balancers.
+    """
     return {"status": "alive"}
 
 @router.get("/ready")
 async def readiness_check() -> Dict[str, Any]:
     """
-    Comprehensive readiness check of all components.
+    Comprehensive readiness check of all system components.
+    
+    Returns:
+        Dict[str, Any]: Detailed health status including:
+            - Overall system health
+            - Timestamp of check
+            - Component-specific health:
+                - Database status and metrics
+                - GPU availability and memory
+                - System resource usage
+                - Storage system status
+    
+    Raises:
+        HTTPException: If health check fails (503 Service Unavailable)
+    
+    Note:
+        This is a more intensive check that verifies all components
+        are operational and have sufficient resources.
     """
     try:
         status = {
@@ -66,7 +122,20 @@ async def readiness_check() -> Dict[str, Any]:
         )
 
 async def check_database() -> Dict[str, Any]:
-    """Check database connectivity and health."""
+    """
+    Check database connectivity and performance metrics.
+    
+    Returns:
+        Dict[str, Any]: Database health status including:
+            - Connection health
+            - Query latency
+            - Active connections
+            - Error details if unhealthy
+    
+    Note:
+        Executes a simple query to verify connectivity and
+        collects performance metrics from pg_stat_database.
+    """
     try:
         async with db.session() as session:
             # Execute simple query
@@ -95,7 +164,22 @@ async def check_database() -> Dict[str, Any]:
         }
 
 def check_gpu() -> Dict[str, Any]:
-    """Check GPU availability and status."""
+    """
+    Check GPU availability and resource usage.
+    
+    Returns:
+        Dict[str, Any]: GPU health status including:
+            - Availability
+            - Device count
+            - Current device
+            - Memory allocation
+            - Memory reservation
+            - Error details if unhealthy
+    
+    Note:
+        Requires CUDA-enabled PyTorch installation.
+        Memory metrics are in bytes.
+    """
     try:
         if not torch.cuda.is_available():
             return {
@@ -118,7 +202,22 @@ def check_gpu() -> Dict[str, Any]:
         }
 
 def check_system_resources() -> Dict[str, Any]:
-    """Check system resource usage."""
+    """
+    Check system resource utilization.
+    
+    Returns:
+        Dict[str, Any]: System health status including:
+            - CPU usage percentage
+            - Memory usage percentage
+            - Disk usage percentage
+            - Available memory
+            - Available disk space
+            - Error details if unhealthy
+    
+    Note:
+        Memory and disk space are in bytes.
+        Percentages are 0-100.
+    """
     try:
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
@@ -139,7 +238,21 @@ def check_system_resources() -> Dict[str, Any]:
         }
 
 def check_storage() -> Dict[str, Any]:
-    """Check storage system status."""
+    """
+    Check storage system availability and usage.
+    
+    Returns:
+        Dict[str, Any]: Storage health status including:
+            - Models directory availability
+            - Data directory availability
+            - Models storage size
+            - Data storage size
+            - Error details if unhealthy
+    
+    Note:
+        Storage sizes are in bytes.
+        Checks configured paths from settings.
+    """
     try:
         models_path = settings.model_dir
         data_path = settings.data_dir

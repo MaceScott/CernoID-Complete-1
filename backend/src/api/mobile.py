@@ -1,3 +1,39 @@
+"""
+File: mobile.py
+Purpose: Provides mobile-specific API endpoints for the CernoID system's mobile application.
+
+Key Features:
+- Real-time camera feed access
+- Security alert monitoring
+- System status tracking
+- Camera management
+- Mobile-optimized image processing
+
+Dependencies:
+- FastAPI: Web framework
+- OpenCV: Image processing
+- NumPy: Array operations
+- Core services:
+  - Camera coordinator
+  - Recognition system
+  - Security system
+  - Storage service
+  - Authentication middleware
+
+API Endpoints:
+- GET /status: System status and statistics
+- GET /cameras: List of camera statuses
+- GET /camera/{camera_id}/frame: Latest camera frame
+- GET /alerts: Recent security alerts
+
+Security:
+- JWT authentication required
+- Permission-based access control
+- Rate limiting
+- Image size optimization
+- Error handling and logging
+"""
+
 from typing import Dict, List, Optional, Union
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -14,6 +50,18 @@ from ..utils.errors import APIError
 
 # API Models
 class AlertResponse(BaseModel):
+    """
+    Security alert response model.
+    
+    Attributes:
+        id (str): Unique alert identifier
+        timestamp (datetime): Alert creation time
+        camera_id (str): Source camera identifier
+        face_id (Optional[str]): Detected face identifier
+        confidence (float): Detection confidence score
+        type (str): Alert type (e.g., "unauthorized_access")
+        image (Optional[str]): Base64 encoded alert image
+    """
     id: str
     timestamp: datetime
     camera_id: str
@@ -23,6 +71,17 @@ class AlertResponse(BaseModel):
     image: Optional[str]
 
 class CameraStatus(BaseModel):
+    """
+    Camera status response model.
+    
+    Attributes:
+        id (str): Camera identifier
+        name (str): Camera display name
+        status (str): Current status ("active", "inactive", "error")
+        fps (float): Current frames per second
+        resolution (tuple): Frame resolution (width, height)
+        last_update (datetime): Last status update time
+    """
     id: str
     name: str
     status: str
@@ -31,6 +90,16 @@ class CameraStatus(BaseModel):
     last_update: datetime
 
 class SystemStats(BaseModel):
+    """
+    System statistics response model.
+    
+    Attributes:
+        active_cameras (int): Number of active cameras
+        faces_detected (int): Total faces detected
+        processing_load (float): System processing load (0-100)
+        alert_count (int): Number of active alerts
+        uptime (float): System uptime in seconds
+    """
     active_cameras: int
     faces_detected: int
     processing_load: float
@@ -38,9 +107,31 @@ class SystemStats(BaseModel):
     uptime: float
 
 class MobileAPI(BaseComponent):
-    """Mobile integration API"""
+    """
+    Mobile API component handling mobile app integration.
+    
+    Features:
+        - Real-time camera feed access
+        - Security alert monitoring
+        - System status tracking
+        - Mobile-optimized image processing
+        
+    Configuration:
+        - api.max_alerts: Maximum alerts to return
+        - api.jpeg_quality: JPEG compression quality
+        - api.max_frame_size: Maximum frame width
+    """
     
     def __init__(self, config: dict):
+        """
+        Initialize mobile API component.
+        
+        Args:
+            config (dict): Configuration dictionary containing:
+                - api.max_alerts: Maximum alerts to return
+                - api.jpeg_quality: JPEG compression quality
+                - api.max_frame_size: Maximum frame width
+        """
         super().__init__(config)
         
         # Initialize FastAPI
@@ -64,13 +155,39 @@ class MobileAPI(BaseComponent):
         }
 
     def _setup_routes(self) -> None:
-        """Setup API routes"""
+        """
+        Setup API routes with security middleware.
+        
+        Routes:
+            - GET /status: System status
+            - GET /cameras: Camera list
+            - GET /camera/{camera_id}/frame: Camera frame
+            - GET /alerts: Security alerts
+            
+        Security:
+            - JWT token required
+            - Permission verification
+            - Rate limiting
+        """
         
         @self.app.get("/status")
         async def get_system_status(
             credentials: HTTPAuthorizationCredentials = Security(self.security)
         ) -> SystemStats:
-            """Get system status"""
+            """
+            Get current system status and statistics.
+            
+            Args:
+                credentials: JWT credentials
+            
+            Returns:
+                SystemStats: Current system statistics
+                
+            Raises:
+                HTTPException:
+                    - 401: Invalid credentials
+                    - 500: Internal error
+            """
             try:
                 # Verify token
                 if not await self._verify_access(credentials.credentials, 'view'):
@@ -89,7 +206,20 @@ class MobileAPI(BaseComponent):
         async def get_cameras(
             credentials: HTTPAuthorizationCredentials = Security(self.security)
         ) -> List[CameraStatus]:
-            """Get all camera statuses"""
+            """
+            Get status of all cameras.
+            
+            Args:
+                credentials: JWT credentials
+            
+            Returns:
+                List[CameraStatus]: List of camera statuses
+                
+            Raises:
+                HTTPException:
+                    - 401: Invalid credentials
+                    - 500: Internal error
+            """
             try:
                 # Verify token
                 if not await self._verify_access(credentials.credentials, 'view'):
@@ -109,7 +239,25 @@ class MobileAPI(BaseComponent):
             camera_id: str,
             credentials: HTTPAuthorizationCredentials = Security(self.security)
         ) -> Dict:
-            """Get latest frame from camera"""
+            """
+            Get latest frame from specified camera.
+            
+            Args:
+                camera_id: Camera identifier
+                credentials: JWT credentials
+            
+            Returns:
+                Dict: Frame data including:
+                    - camera_id: Camera identifier
+                    - timestamp: Frame timestamp
+                    - image: Base64 encoded JPEG
+                
+            Raises:
+                HTTPException:
+                    - 401: Invalid credentials
+                    - 404: Camera/frame not found
+                    - 500: Internal error
+            """
             try:
                 # Verify token
                 if not await self._verify_access(credentials.credentials, 'view'):
@@ -131,7 +279,24 @@ class MobileAPI(BaseComponent):
             limit: int = 10,
             credentials: HTTPAuthorizationCredentials = Security(self.security)
         ) -> List[AlertResponse]:
-            """Get recent alerts"""
+            """
+            Get recent security alerts.
+            
+            Args:
+                limit: Maximum number of alerts to return
+                credentials: JWT credentials
+            
+            Returns:
+                List[AlertResponse]: List of recent alerts
+                
+            Raises:
+                HTTPException:
+                    - 401: Invalid credentials
+                    - 500: Internal error
+                    
+            Note:
+                Limit is capped by api.max_alerts configuration
+            """
             try:
                 # Verify token
                 if not await self._verify_access(credentials.credentials, 'view'):
@@ -147,7 +312,16 @@ class MobileAPI(BaseComponent):
                 self._handle_error("Alert request failed", e)
 
     async def _verify_access(self, token: str, required_permission: str) -> bool:
-        """Verify token and check permission"""
+        """
+        Verify JWT token and check required permission.
+        
+        Args:
+            token: JWT token
+            required_permission: Required permission string
+            
+        Returns:
+            bool: True if access is allowed
+        """
         try:
             return await self.app.security.check_permission(
                 token,
@@ -157,7 +331,15 @@ class MobileAPI(BaseComponent):
             return False
 
     async def _get_system_stats(self) -> SystemStats:
-        """Get system statistics"""
+        """
+        Collect system statistics from various components.
+        
+        Returns:
+            SystemStats: Current system statistics
+            
+        Raises:
+            APIError: If stats collection fails
+        """
         try:
             # Collect stats from various components
             recognition_stats = await self.app.recognition.get_stats()
@@ -176,7 +358,15 @@ class MobileAPI(BaseComponent):
             raise APIError(f"Failed to get system stats: {str(e)}")
 
     async def _get_camera_statuses(self) -> List[CameraStatus]:
-        """Get all camera statuses"""
+        """
+        Get status of all registered cameras.
+        
+        Returns:
+            List[CameraStatus]: List of camera statuses
+            
+        Raises:
+            APIError: If status collection fails
+        """
         try:
             coordinator = self.app.camera.coordinator
             cameras = []
@@ -199,7 +389,18 @@ class MobileAPI(BaseComponent):
             raise APIError(f"Failed to get camera statuses: {str(e)}")
 
     async def _get_camera_frame(self, camera_id: str) -> Optional[Dict]:
-        """Get latest frame from camera"""
+        """
+        Get latest frame from camera and process for mobile.
+        
+        Args:
+            camera_id: Camera identifier
+            
+        Returns:
+            Optional[Dict]: Frame data or None if unavailable
+            
+        Raises:
+            APIError: If frame retrieval/processing fails
+        """
         try:
             # Get frame from coordinator
             frame_data = await self.app.camera.coordinator.get_frame(camera_id)
@@ -225,7 +426,22 @@ class MobileAPI(BaseComponent):
             raise APIError(f"Failed to get camera frame: {str(e)}")
 
     def _process_frame_for_mobile(self, frame: np.ndarray) -> np.ndarray:
-        """Process frame for mobile delivery"""
+        """
+        Process frame for mobile delivery (resize, optimize).
+        
+        Args:
+            frame: Input frame array
+            
+        Returns:
+            np.ndarray: Processed frame
+            
+        Raises:
+            APIError: If processing fails
+            
+        Note:
+            Resizes frame to fit within max_frame_size while
+            maintaining aspect ratio
+        """
         try:
             # Resize if needed
             height, width = frame.shape[:2]
@@ -243,7 +459,21 @@ class MobileAPI(BaseComponent):
             raise APIError(f"Frame processing failed: {str(e)}")
 
     async def _get_recent_alerts(self, limit: int) -> List[AlertResponse]:
-        """Get recent security alerts"""
+        """
+        Get recent security alerts with images.
+        
+        Args:
+            limit: Maximum number of alerts to return
+            
+        Returns:
+            List[AlertResponse]: List of recent alerts
+            
+        Raises:
+            APIError: If alert retrieval fails
+            
+        Note:
+            Limit is capped by max_alerts configuration
+        """
         try:
             limit = min(limit, self._max_alerts)
             alerts = await self.app.storage.get_recent_alerts(limit)
