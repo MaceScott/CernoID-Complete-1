@@ -17,6 +17,9 @@ from core.database.connection import db_pool
 from core.face_recognition import face_recognition_system
 from core.utils.setup import setup_directories, load_environment
 from api.routes import router as api_router
+from core.monitoring.health import router as health_router
+from core.system.bootstrap import SystemBootstrap
+from core.config import settings
 
 def setup_environment(app_dir: Path = None) -> Path:
     """Setup environment and logging."""
@@ -61,7 +64,7 @@ def create_app(app_dir: Path) -> FastAPI:
     try:
         app = FastAPI(
             title="CernoID API",
-            description="Face Recognition and Identity Management API",
+            description="CernoID Security System API",
             version="1.0.0",
             lifespan=lifespan
         )
@@ -69,7 +72,7 @@ def create_app(app_dir: Path) -> FastAPI:
         # Configure CORS
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=settings.CORS_ORIGINS,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -93,6 +96,20 @@ def create_app(app_dir: Path) -> FastAPI:
         # Register API routes
         app.include_router(api_router, prefix="/api/v1")
         
+        # Include health check routes
+        app.include_router(health_router, tags=["health"])
+        
+        # System bootstrap
+        system = SystemBootstrap()
+
+        @app.on_event("startup")
+        async def startup_event():
+            await system.initialize()
+
+        @app.on_event("shutdown")
+        async def shutdown_event():
+            await system.cleanup()
+
         return app
     except Exception as e:
         logger.error(f"Failed to create application: {e}")

@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import {
   AppBar,
@@ -8,6 +10,7 @@ import {
   useTheme,
   Button,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -36,10 +39,18 @@ export const TopBar = ({
   const theme = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
   const handleLogout = async () => {
-    await logout();
-    router.push('/login');
+    try {
+      setIsLoggingOut(true);
+      await logout();
+      router.push('/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
@@ -102,7 +113,7 @@ export const TopBar = ({
               <Tooltip title="Settings">
                 <IconButton 
                   color="inherit"
-                  onClick={() => router.push('/settings')}
+                  onClick={() => router.push('/dashboard/settings')}
                 >
                   <Settings />
                 </IconButton>
@@ -111,7 +122,7 @@ export const TopBar = ({
               <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
                 <IconButton
                   color="inherit"
-                  onClick={() => router.push('/profile')}
+                  onClick={() => router.push('/dashboard/profile')}
                 >
                   <AccountCircle />
                 </IconButton>
@@ -119,9 +130,14 @@ export const TopBar = ({
                   variant="outlined"
                   color="inherit"
                   onClick={handleLogout}
-                  sx={{ ml: 1 }}
+                  disabled={isLoggingOut}
+                  sx={{ ml: 1, minWidth: 100 }}
                 >
-                  Logout
+                  {isLoggingOut ? (
+                    <CircularProgress size={20} color="inherit" />
+                  ) : (
+                    'Logout'
+                  )}
                 </Button>
               </Box>
             </>

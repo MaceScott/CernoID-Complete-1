@@ -1,3 +1,14 @@
+// Re-export all types
+export * from './shared';
+export * from './auth';
+export * from './features/recognition';
+export * from './features/settings';
+export * from './features/camera';
+export * from './config';
+
+// Theme type
+export type Theme = 'light' | 'dark';
+
 export interface User {
     id: string;
     username: string;
@@ -169,6 +180,4 @@ export interface PaginatedResponse<T> {
     page: number;
     limit: number;
     pages: number;
-}
-
-export type Theme = 'light' | 'dark'; 
+} 

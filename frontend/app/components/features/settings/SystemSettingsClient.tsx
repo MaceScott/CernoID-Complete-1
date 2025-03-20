@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box,
   Container,
@@ -25,7 +25,10 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Tooltip,
+  Snackbar,
+  IconButton,
 } from '@mui/material';
 import {
   Storage as StorageIcon,
@@ -33,10 +36,16 @@ import {
   Timer as TimerIcon,
   Update as UpdateIcon,
   Backup as BackupIcon,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  Info as InfoIcon,
+  Save as SaveIcon,
+  Keyboard as KeyboardIcon,
 } from '@mui/icons-material';
 import { useAuth } from '@/hooks/useAuth';
 import { BaseFrame } from '@/desktop/BaseFrame';
+import { withErrorBoundary } from '@/components/shared/feedback';
+import debounce from 'lodash/debounce';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 interface SystemStatus {
   cpu: {
@@ -75,6 +84,41 @@ interface BackupConfig {
   location: string;
 }
 
+interface ConfirmDialogProps {
+  open: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+interface AutoSaveStatus {
+  saving: boolean;
+  lastSaved: Date | null;
+  error: string | null;
+}
+
+const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
+  open,
+  title,
+  message,
+  onConfirm,
+  onCancel,
+}) => (
+  <Dialog open={open} onClose={onCancel}>
+    <DialogTitle>{title}</DialogTitle>
+    <DialogContent>
+      <Typography>{message}</Typography>
+    </DialogContent>
+    <DialogActions>
+      <Button onClick={onCancel}>Cancel</Button>
+      <Button onClick={onConfirm} color="error" variant="contained">
+        Confirm
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
+
 export function SystemSettingsClient() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -105,6 +149,28 @@ export function SystemSettingsClient() {
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [retentionDays, setRetentionDays] = useState('30');
   const [updating, setUpdating] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+  const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>({
+    saving: false,
+    lastSaved: null,
+    error: null,
+  });
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+
+  // Create refs for the form fields that need auto-save
+  const retentionDaysRef = useRef(retentionDays);
+  const backupConfigRef = useRef(backupConfig);
+  const autoUpdateRef = useRef(autoUpdate);
 
   useEffect(() => {
     fetchSystemStatus();
@@ -238,6 +304,136 @@ export function SystemSettingsClient() {
     return `${days}d ${hours}h ${minutes}m`;
   };
 
+  const showConfirmDialog = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({
+      open: true,
+      title,
+      message,
+      onConfirm,
+    });
+  };
+
+  const handleUpdateRetention = () => {
+    showConfirmDialog(
+      'Update Log Retention',
+      `Are you sure you want to change the log retention period to ${retentionDays} days? This will affect all system logs.`,
+      async () => {
+        try {
+          // Implement the update
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/retention`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ days: parseInt(retentionDays) }),
+          });
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to update retention period');
+        }
+      }
+    );
+  };
+
+  const handleUpdateBackupConfig = () => {
+    showConfirmDialog(
+      'Update Backup Configuration',
+      'Are you sure you want to update the backup configuration? This will affect all future system backups.',
+      async () => {
+        try {
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/backup-config`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(backupConfig),
+          });
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to update backup configuration');
+        }
+      }
+    );
+  };
+
+  // Auto-save functionality
+  const saveChanges = useCallback(async () => {
+    setAutoSaveStatus(prev => ({ ...prev, saving: true }));
+    try {
+      // Save retention days
+      if (retentionDaysRef.current !== retentionDays) {
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/retention`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ days: parseInt(retentionDays) }),
+        });
+        retentionDaysRef.current = retentionDays;
+      }
+
+      // Save backup config
+      if (JSON.stringify(backupConfigRef.current) !== JSON.stringify(backupConfig)) {
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/backup-config`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(backupConfig),
+        });
+        backupConfigRef.current = backupConfig;
+      }
+
+      // Save auto-update setting
+      if (autoUpdateRef.current !== autoUpdate) {
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/system/auto-update`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: autoUpdate }),
+        });
+        autoUpdateRef.current = autoUpdate;
+      }
+
+      setAutoSaveStatus({
+        saving: false,
+        lastSaved: new Date(),
+        error: null,
+      });
+    } catch (err) {
+      setAutoSaveStatus({
+        saving: false,
+        lastSaved: null,
+        error: err instanceof Error ? err.message : 'Failed to save changes',
+      });
+    }
+  }, [retentionDays, backupConfig, autoUpdate]);
+
+  const debouncedSave = useCallback(debounce(saveChanges, 1000), [saveChanges]);
+
+  // Auto-save effect
+  useEffect(() => {
+    debouncedSave();
+    return () => debouncedSave.cancel();
+  }, [retentionDays, backupConfig, autoUpdate, debouncedSave]);
+
+  // Keyboard shortcuts
+  useHotkeys('ctrl+s, cmd+s', (e: KeyboardEvent) => {
+    e.preventDefault();
+    saveChanges();
+  }, [saveChanges]);
+
+  useHotkeys('ctrl+/, cmd+/', (e: KeyboardEvent) => {
+    e.preventDefault();
+    setShowKeyboardShortcuts(true);
+  });
+
+  useHotkeys('esc', () => {
+    setShowKeyboardShortcuts(false);
+    setBackupDialog(false);
+    setConfirmDialog(prev => ({ ...prev, open: false }));
+  });
+
   if (error) {
     return (
       <BaseFrame title="System Settings">
@@ -258,14 +454,21 @@ export function SystemSettingsClient() {
             <Typography variant="h4" component="h1" gutterBottom>
               System Settings
             </Typography>
-            <Button 
-              variant="contained" 
-              color="primary"
-              startIcon={<BackupIcon />}
-              onClick={() => setBackupDialog(true)}
-            >
-              Create Backup
-            </Button>
+            <Box>
+              <Tooltip title="Keyboard Shortcuts (Ctrl+/)">
+                <IconButton onClick={() => setShowKeyboardShortcuts(true)}>
+                  <KeyboardIcon />
+                </IconButton>
+              </Tooltip>
+              <Button 
+                variant="contained" 
+                color="primary"
+                startIcon={<BackupIcon />}
+                onClick={() => setBackupDialog(true)}
+              >
+                Create Backup
+              </Button>
+            </Box>
           </Box>
 
           {loading ? (
@@ -377,7 +580,14 @@ export function SystemSettingsClient() {
                   <List>
                     <ListItem>
                       <ListItemText
-                        primary="Automatic Updates"
+                        primary={
+                          <Box display="flex" alignItems="center">
+                            Automatic Updates
+                            <Tooltip title="When enabled, the system will automatically install security updates and bug fixes">
+                              <InfoIcon fontSize="small" sx={{ ml: 1 }} />
+                            </Tooltip>
+                          </Box>
+                        }
                         secondary="Keep the system up to date automatically"
                       />
                       <ListItemSecondaryAction>
@@ -390,7 +600,14 @@ export function SystemSettingsClient() {
                     </ListItem>
                     <ListItem>
                       <ListItemText
-                        primary="Log Retention"
+                        primary={
+                          <Box display="flex" alignItems="center">
+                            Log Retention
+                            <Tooltip title="Specify how long to keep system logs before they are automatically deleted">
+                              <InfoIcon fontSize="small" sx={{ ml: 1 }} />
+                            </Tooltip>
+                          </Box>
+                        }
                         secondary="Number of days to keep system logs"
                       />
                       <ListItemSecondaryAction>
@@ -446,9 +663,17 @@ export function SystemSettingsClient() {
               {/* Backup Configuration */}
               <Grid item xs={12}>
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Backup Configuration
-                  </Typography>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6">
+                      Backup Configuration
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      onClick={handleUpdateBackupConfig}
+                    >
+                      Save Changes
+                    </Button>
+                  </Box>
                   <Grid container spacing={3}>
                     <Grid item xs={12} sm={6}>
                       <TextField
@@ -481,6 +706,55 @@ export function SystemSettingsClient() {
             </Grid>
           )}
         </Box>
+
+        {/* Auto-save status snackbar */}
+        <Snackbar
+          open={autoSaveStatus.saving || (autoSaveStatus.lastSaved !== null)}
+          autoHideDuration={3000}
+          onClose={() => setAutoSaveStatus(prev => ({ ...prev, lastSaved: null }))}
+          message={
+            autoSaveStatus.saving
+              ? 'Saving changes...'
+              : autoSaveStatus.lastSaved
+              ? `Last saved at ${autoSaveStatus.lastSaved.toLocaleTimeString()}`
+              : ''
+          }
+        />
+
+        {/* Keyboard shortcuts dialog */}
+        <Dialog
+          open={showKeyboardShortcuts}
+          onClose={() => setShowKeyboardShortcuts(false)}
+        >
+          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+          <DialogContent>
+            <List>
+              <ListItem>
+                <ListItemText
+                  primary="Save Changes"
+                  secondary="Ctrl+S or Cmd+S"
+                />
+              </ListItem>
+              <ListItem>
+                <ListItemText
+                  primary="Show Keyboard Shortcuts"
+                  secondary="Ctrl+/ or Cmd+/"
+                />
+              </ListItem>
+              <ListItem>
+                <ListItemText
+                  primary="Close Dialogs"
+                  secondary="Esc"
+                />
+              </ListItem>
+            </List>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowKeyboardShortcuts(false)}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Backup Dialog */}
         <Dialog open={backupDialog} onClose={() => setBackupDialog(false)}>
@@ -516,7 +790,24 @@ export function SystemSettingsClient() {
             </Button>
           </DialogActions>
         </Dialog>
+
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        />
       </Container>
     </BaseFrame>
   );
-} 
+}
+
+const SystemSettingsClientWithErrorBoundary = withErrorBoundary(SystemSettingsClient, {
+  onError: (error, errorInfo) => {
+    // Log error to your error reporting service
+    console.error('Error in SystemSettings:', error, errorInfo);
+  }
+});
+
+export default SystemSettingsClientWithErrorBoundary; 

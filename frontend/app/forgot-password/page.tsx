@@ -12,7 +12,7 @@ export const revalidate = 0;
 
 import React, { useState, useEffect } from 'react';
 import { Box, Container, Paper, Typography, useTheme } from '@mui/material';
-import { ForgotPassword } from '@/components/Auth/ForgotPassword';
+import { ForgotPassword } from '@/components/Auth';
 import { TopBar } from '@/components/Navigation/TopBar';
 import { motion } from 'framer-motion';
 

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<shortcut>
-    <desktop-entry>Surveillance System.lnk</desktop-entry>
-    <icon>%SystemRoot%\system32\SHELL32.dll,17</icon>
-    <target>%USERPROFILE%\surveillance-system\scripts\start.bat</target>
-    <description>Start Surveillance System</description>
-    <working-directory>%USERPROFILE%\surveillance-system</working-directory>
-</shortcut> 

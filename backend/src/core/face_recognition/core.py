@@ -150,15 +150,17 @@ class FaceRecognitionSystem(BaseComponent):
     - Caching
     """
     
-    def __init__(self):
+    def __init__(self, config: Dict[str, Any], database_url: str):
         """
         Initialize face recognition system.
         Sets up configuration, services, and GPU settings.
         """
-        super().__init__()
-        self.config = settings
-        self.event_manager = event_manager
-        self.db_pool = db_pool
+        super().__init__(config)
+        self.database = FaceDatabase(database_url)
+        self._encoding_cache = TTLCache(
+            maxsize=self.config.FACE_RECOGNITION_CACHE_SIZE,
+            ttl=self.config.FACE_RECOGNITION_CACHE_TTL
+        )
         self.is_initialized = False
         self._initializing = False
         
@@ -207,12 +209,6 @@ class FaceRecognitionSystem(BaseComponent):
             # Batch size for CPU
             self._batch_size = 4
                 
-            # Enhanced caching with TTL
-            self._encoding_cache = TTLCache(
-                maxsize=self.config.FACE_RECOGNITION_CACHE_SIZE,
-                ttl=self.config.FACE_RECOGNITION_CACHE_TTL
-            )
-            
             # Optimize processing settings
             self._face_size = self.config.RECOGNITION_FACE_SIZE
             self._min_quality = self.config.RECOGNITION_MIN_QUALITY
@@ -598,8 +594,29 @@ class FaceRecognitionSystem(BaseComponent):
         Returns:
             np.ndarray: Face encoding vector
         """
-        # TODO: Implement face encoding
-        pass
+        try:
+            # Extract face region
+            x, y, w, h = face_bbox
+            face_img = image[y:y+h, x:x+w]
+            
+            # Preprocess face image
+            face_tensor = self._preprocess_face(face_img)
+            if face_tensor is None:
+                raise ValueError("Failed to preprocess face image")
+            
+            # Generate embedding
+            with torch.no_grad():
+                embedding = self._encoder(face_tensor)
+                embedding = embedding.cpu().numpy()
+            
+            # Normalize embedding
+            embedding = embedding / np.linalg.norm(embedding)
+            
+            return embedding
+            
+        except Exception as e:
+            logger.error(f"Face encoding failed: {str(e)}")
+            raise
 
     @handle_errors
     @measure_performance()
@@ -624,17 +641,23 @@ class FaceRecognitionSystem(BaseComponent):
             largest_face = max(faces, key=lambda f: f['bbox'][2] * f['bbox'][3])
             encoding = await self.get_face_encoding(image, largest_face['bbox'])
             
-            # Compare with stored encoding
-            stored_encoding = self._encoding_cache.get(username)
-            if stored_encoding is None:
-                # TODO: Load from database
+            # Get stored encodings
+            stored_encodings = self.database.get_user_encodings(username)
+            if not stored_encodings:
                 return None
             
-            similarity = self._compare_encodings(encoding, stored_encoding)
+            # Compare with all stored encodings
+            similarities = [
+                self._compare_encodings(encoding, stored_encoding)
+                for stored_encoding in stored_encodings
+            ]
+            
+            # Get best match
+            best_similarity = max(similarities)
             
             return {
-                'match': similarity > 0.9,
-                'confidence': float(similarity),
+                'match': best_similarity > 0.9,
+                'confidence': float(best_similarity),
                 'timestamp': datetime.utcnow().isoformat()
             }
             
@@ -665,11 +688,20 @@ class FaceRecognitionSystem(BaseComponent):
             largest_face = max(faces, key=lambda f: f['bbox'][2] * f['bbox'][3])
             encoding = await self.get_face_encoding(image, largest_face['bbox'])
             
-            # Store encoding
-            self._encoding_cache[user_id] = encoding
-            # TODO: Store in database
+            # Assess quality
+            quality_score = await self._analyze_quality(
+                image[largest_face['bbox'][1]:largest_face['bbox'][1]+largest_face['bbox'][3],
+                      largest_face['bbox'][0]:largest_face['bbox'][0]+largest_face['bbox'][2]],
+                None  # No landmarks needed for quality check
+            )
             
-            return True
+            # Store encoding in database
+            success = self.database.store_encoding(user_id, encoding, quality_score)
+            if success:
+                # Update cache
+                self._encoding_cache[user_id] = encoding
+            
+            return success
             
         except Exception as e:
             logger.error(f"Face registration failed: {e}")
@@ -686,8 +718,25 @@ class FaceRecognitionSystem(BaseComponent):
         Returns:
             float: Similarity score
         """
-        # TODO: Implement encoding comparison
-        pass
+        try:
+            # Ensure encodings are normalized
+            encoding1 = encoding1 / np.linalg.norm(encoding1)
+            encoding2 = encoding2 / np.linalg.norm(encoding2)
+            
+            # Calculate cosine similarity
+            similarity = np.dot(encoding1, encoding2)
+            
+            # Convert to distance metric (0 = same person, 1 = different person)
+            distance = 1 - similarity
+            
+            # Apply sigmoid function to get probability
+            probability = 1 / (1 + np.exp(-10 * (0.5 - distance)))
+            
+            return float(probability)
+            
+        except Exception as e:
+            logger.error(f"Encoding comparison failed: {str(e)}")
+            return 0.0
 
     def _preprocess_face(self, face_img: np.ndarray) -> Optional[torch.Tensor]:
         """

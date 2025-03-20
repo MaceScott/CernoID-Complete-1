@@ -1,9 +1,13 @@
-"""SQLAlchemy base model configuration."""
+"""
+Base model configuration for SQLAlchemy.
+Provides common functionality for all models.
+"""
+
 from typing import Any, TypeVar, Type, Dict, Optional
 from datetime import datetime
 from sqlalchemy import MetaData, Column, Integer, DateTime, String, event
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
-from sqlalchemy.orm import Session, validates
+from sqlalchemy.orm import Session, validates, DeclarativeMeta
 import logging
 
 # Configure logging
@@ -14,7 +18,7 @@ logger = logging.getLogger(__name__)
 ModelType = TypeVar("ModelType", bound="BaseModel")
 
 # Naming convention for constraints and indexes
-NAMING_CONVENTION = {
+convention = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
     "ck": "ck_%(table_name)s_%(constraint_name)s",
@@ -23,7 +27,7 @@ NAMING_CONVENTION = {
 }
 
 # Create metadata with naming convention
-metadata = MetaData(naming_convention=NAMING_CONVENTION)
+metadata = MetaData(naming_convention=convention)
 
 class _Base:
     """Base mixin class with common functionality."""
@@ -68,15 +72,19 @@ class _Base:
         return session.query(cls).filter(cls.id == id).first()
 
 # Create base with metadata
-Base = declarative_base(
+Base: DeclarativeMeta = declarative_base(
     metadata=metadata,
     cls=_Base,
     constructor=_Base.__init__ if hasattr(_Base, '__init__') else None
 )
 
 class BaseModel(Base):
-    """Base model class with common functionality."""
+    """Base model with common fields and methods."""
+    
     __abstract__ = True
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize model with custom fields."""
@@ -92,6 +100,17 @@ class BaseModel(Base):
         instance = cls(**kwargs)
         session.add(instance)
         return instance
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'BaseModel':
+        """Create model instance from dictionary."""
+        return cls(**data)
+
+    def update(self, data: Dict[str, Any]) -> None:
+        """Update model with dictionary data."""
+        for key, value in data.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
 class MigrationHistory(BaseModel):
     """Track database migrations and their application timestamps."""

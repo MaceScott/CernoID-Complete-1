@@ -1,20 +1,13 @@
 'use client';
 
 import { Box, Button, Container, Typography } from '@mui/material';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-
-const MotionBox = motion(Box);
+import { Home as HomeIcon } from '@mui/icons-material';
+import Link from 'next/link';
 
 export default function NotFound() {
-  const router = useRouter();
-
   return (
-    <Container maxWidth="sm">
-      <MotionBox
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
+    <Container maxWidth="md">
+      <Box
         sx={{
           display: 'flex',
           flexDirection: 'column',
@@ -22,6 +15,7 @@ export default function NotFound() {
           justifyContent: 'center',
           minHeight: '100vh',
           textAlign: 'center',
+          gap: 3,
         }}
       >
         <Typography variant="h1" component="h1" gutterBottom>
@@ -31,17 +25,18 @@ export default function NotFound() {
           Page Not Found
         </Typography>
         <Typography variant="body1" color="text.secondary" paragraph>
-          The page you're looking for doesn't exist or has been moved.
+          The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.
         </Typography>
         <Button
+          component={Link}
+          href="/"
           variant="contained"
-          color="primary"
-          onClick={() => router.push('/dashboard')}
-          sx={{ mt: 2 }}
+          startIcon={<HomeIcon />}
+          size="large"
         >
-          Go to Dashboard
+          Back to Home
         </Button>
-      </MotionBox>
+      </Box>
     </Container>
   );
 } 

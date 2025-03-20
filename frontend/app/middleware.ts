@@ -1,81 +1,80 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { verify } from 'jsonwebtoken';
-
-// Routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password'];
-
-// Routes that require authentication
-const PROTECTED_ROUTES = ['/dashboard', '/admin', '/settings', '/profile'];
-
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
+import { NextRequest, NextResponse } from 'next/server';
+import { authMiddleware } from './middleware/auth';
+import { rateLimitMiddleware } from './middleware/rate-limit';
+import { errorHandlingMiddleware } from './middleware/error-handling';
+import { loggingMiddleware } from './middleware/logging';
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  try {
+    // Apply logging middleware first
+    const loggingResponse = await loggingMiddleware.handle(request, {
+      config: loggingMiddleware['config'],
+      onError: (error) => {
+        console.error('Logging middleware error:', error);
+      },
+    });
 
-  // Allow API routes to be accessed directly
-  if (pathname.startsWith('/api/')) {
-    const response = NextResponse.next();
-    // Add CORS headers for API routes
-    response.headers.set('Access-Control-Allow-Origin', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    response.headers.set('Access-Control-Allow-Credentials', 'true');
-    return response;
+    if (loggingResponse) {
+      return loggingResponse;
+    }
+
+    // Apply rate limiting
+    const rateLimitResponse = await rateLimitMiddleware.handle(request, {
+      config: rateLimitMiddleware['config'],
+      onError: (error) => {
+        console.error('Rate limit middleware error:', error);
+      },
+    });
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
+    // Apply authentication
+    const authResponse = await authMiddleware.handle(request, {
+      config: authMiddleware['config'],
+      onError: (error) => {
+        console.error('Auth middleware error:', error);
+      },
+    });
+
+    if (authResponse) {
+      return authResponse;
+    }
+
+    // Apply error handling
+    const errorResponse = await errorHandlingMiddleware.handle(request, {
+      config: errorHandlingMiddleware['config'],
+      onError: (error) => {
+        console.error('Error handling middleware error:', error);
+      },
+    });
+
+    if (errorResponse) {
+      return errorResponse;
+    }
+
+    return NextResponse.next();
+  } catch (error) {
+    console.error('Middleware error:', error);
+    return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
   }
-
-  // Get session token from cookies
-  const session = request.cookies.get('session');
-  const isAuthenticated = !!session?.value;
-
-  // Check if current route is public or protected
-  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
-  const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname.startsWith(route));
-
-  // Handle root path
-  if (pathname === '/') {
-    return NextResponse.redirect(
-      new URL(isAuthenticated ? '/dashboard' : '/login', request.url)
-    );
-  }
-
-  // Redirect authenticated users away from public routes
-  if (isAuthenticated && isPublicRoute) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-
-  // Redirect unauthenticated users to login
-  if (!isAuthenticated && isProtectedRoute) {
-    const response = NextResponse.redirect(new URL('/login', request.url));
-    response.cookies.delete('session'); // Clear invalid session
-    return response;
-  }
-
-  // Add user info to request headers for downstream handlers
-  const response = NextResponse.next();
-  if (isAuthenticated) {
-    const payload = verify(session.value, JWT_SECRET) as {
-      sub: string;
-      email: string;
-      role: string;
-      permissions: string[];
-    };
-    response.headers.set('X-User-Role', payload.role);
-  }
-
-  return response;
 }
 
-// Configure which routes use this middleware
 export const config = {
   matcher: [
     /*
-     * Match all request paths except:
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder
      */
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
 }; 

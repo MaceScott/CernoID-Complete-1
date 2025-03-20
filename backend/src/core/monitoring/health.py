@@ -9,6 +9,9 @@ import os
 import psutil
 import platform
 from ..logging import get_logger
+from fastapi import APIRouter, Depends
+from core.system.bootstrap import SystemBootstrap
+from core.monitoring.system.manager import SystemManager
 
 logger = get_logger(__name__)
 
@@ -405,4 +408,57 @@ class HealthCheck(BaseComponent):
             'database': db_health,
             'services': services_health,
             'timestamp': datetime.utcnow().isoformat()
+        }
+
+router = APIRouter()
+
+@router.get("/health")
+async def health_check(
+    system: SystemBootstrap = Depends(),
+    system_manager: SystemManager = Depends()
+) -> Dict[str, Any]:
+    """Health check endpoint"""
+    try:
+        # Get system health status
+        health_status = await system.check_health()
+        
+        # Get component health
+        component_health = await system_manager.get_component_health()
+        
+        return {
+            "status": "healthy" if health_status["healthy"] else "unhealthy",
+            "components": component_health,
+            "details": health_status["details"]
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+@router.get("/ready")
+async def readiness_check(
+    system: SystemBootstrap = Depends(),
+    system_manager: SystemManager = Depends()
+) -> Dict[str, Any]:
+    """Readiness check endpoint"""
+    try:
+        # Check if system is ready to accept traffic
+        health_status = await system.check_health()
+        component_health = await system_manager.get_component_health()
+        
+        # System is ready if all critical components are healthy
+        is_ready = all(
+            status == "healthy" 
+            for status in component_health.values()
+        )
+        
+        return {
+            "status": "ready" if is_ready else "not_ready",
+            "components": component_health
+        }
+    except Exception as e:
+        return {
+            "status": "not_ready",
+            "error": str(e)
         } 

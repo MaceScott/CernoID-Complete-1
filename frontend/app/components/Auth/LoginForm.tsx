@@ -97,11 +97,29 @@ export const LoginForm = () => {
     password: '',
   });
   const formRef = useRef<HTMLFormElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mounted = useRef(true);
   const router = useRouter();
   const [showCameraDialog, setShowCameraDialog] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<Date | null>(null);
+  const MAX_LOGIN_ATTEMPTS = 5;
+  const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+
+  // Clear form on mount
+  useEffect(() => {
+    if (formRef.current) {
+      formRef.current.reset();
+    }
+    setCredentials({ email: '', password: '' });
+    clearError();
+  }, []);
 
   // Clear form and errors on unmount
   useEffect(() => {
@@ -113,6 +131,13 @@ export const LoginForm = () => {
       clearError();
     };
   }, [clearError]);
+
+  // Clear password on error
+  useEffect(() => {
+    if (error) {
+      setCredentials(prev => ({ ...prev, password: '' }));
+    }
+  }, [error]);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -198,18 +223,95 @@ export const LoginForm = () => {
     }
   };
 
+  const validatePassword = (password: string): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+    
+    if (password.length < 8) {
+      errors.push('Password must be at least 8 characters long');
+    }
+    if (!/[A-Z]/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter');
+    }
+    if (!/[a-z]/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter');
+    }
+    if (!/[0-9]/.test(password)) {
+      errors.push('Password must contain at least one number');
+    }
+    if (!/[!@#$%^&*]/.test(password)) {
+      errors.push('Password must contain at least one special character (!@#$%^&*)');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('[LoginForm] Form submission started');
     
+    // Check for lockout
+    if (lockoutUntil && new Date() < lockoutUntil) {
+      const remainingTime = Math.ceil((lockoutUntil.getTime() - new Date().getTime()) / 1000 / 60);
+      setError(`Too many login attempts. Please try again in ${remainingTime} minutes.`);
+      return;
+    }
+
     if (!validateForm() || isLoading) {
       console.log('[LoginForm] Validation failed or form is loading');
       return;
     }
 
-    console.log('[LoginForm] Calling login with credentials:', { email: credentials.email });
-    const result = await login(credentials);
-    console.log('[LoginForm] Login result:', result);
+    // Validate password strength for new registrations
+    if (isRegistering) {
+      const { isValid, errors } = validatePassword(credentials.password);
+      if (!isValid) {
+        setError(errors.join('\n'));
+        return;
+      }
+    }
+
+    try {
+      console.log('[LoginForm] Calling login with credentials:', { email: credentials.email });
+      const result = await login(credentials);
+      console.log('[LoginForm] Login result:', result);
+      
+      if (!result.success) {
+        // Increment login attempts
+        const newAttempts = loginAttempts + 1;
+        setLoginAttempts(newAttempts);
+
+        // Check if should lockout
+        if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+          const lockoutTime = new Date(new Date().getTime() + LOCKOUT_DURATION);
+          setLockoutUntil(lockoutTime);
+          setError(`Too many failed login attempts. Account locked for ${LOCKOUT_DURATION / 1000 / 60} minutes.`);
+        }
+
+        // Clear password on failed attempt
+        setCredentials(prev => ({ ...prev, password: '' }));
+      } else {
+        // Reset attempts on successful login
+        setLoginAttempts(0);
+        setLockoutUntil(null);
+      }
+    } catch (err) {
+      console.error('[LoginForm] Login error:', err);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    }
+  };
+
+  const handleLoginSuccess = async () => {
+    if (mounted.current) {
+      setShowCameraDialog(false);
+      setIsSubmitting(false);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    }
   };
 
   /**
@@ -229,7 +331,7 @@ export const LoginForm = () => {
       return;
     }
 
-    setError(null);
+    clearError();
     setCameraError(null);
     setIsSubmitting(true);
     setShowCameraDialog(true);
@@ -398,7 +500,6 @@ export const LoginForm = () => {
           console.log('Face-api.js script loaded');
           if (window.faceapi) {
             console.log('Face-api.js loaded successfully');
-            // Reset states to trigger model loading
             setModelsLoaded(false);
             setIsLoadingModels(true);
           } else {
@@ -481,6 +582,35 @@ export const LoginForm = () => {
             </Alert>
           )}
 
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              disabled={isLoading}
+              startIcon={isLoading ? <CircularProgress size={20} /> : null}
+            >
+              Sign In
+            </Button>
+
+            <Button
+              type="button"
+              variant="outlined"
+              fullWidth
+              onClick={handleFaceLogin}
+              disabled={isLoading || isLoadingModels}
+              startIcon={
+                isLoadingModels ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <FaceIcon />
+                )
+              }
+            >
+              Sign In with Face ID
+            </Button>
+          </Box>
+
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
             <Button
               component={Link}
@@ -499,24 +629,10 @@ export const LoginForm = () => {
               Create Account
             </Button>
           </Box>
-
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            disabled={isLoading}
-            sx={{ mb: 2 }}
-          >
-            {isLoading ? (
-              <CircularProgress size={24} color="inherit" />
-            ) : (
-              'Sign In'
-            )}
-          </Button>
         </form>
-
-        <CameraDialog />
       </MotionBox>
+
+      <CameraDialog />
     </>
   );
 }; 

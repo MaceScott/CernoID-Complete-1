@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { Camera, AlertCircle, Maximize2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useWebSocket } from "@/lib/websocket";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { useWebSocketContext } from "@/providers/WebSocketProvider";
+import { LoadingOverlay } from "@/components/shared/feedback";
 import Skeleton from "@/components/ui/skeleton";
+import { CameraConfig } from "@/types/shared";
 
 interface CameraFeedProps {
-  id: string;
-  name: string;
-  status: "active" | "inactive";
+  camera: CameraConfig;
+  status: 'active' | 'inactive' | 'error';
   className?: string;
   onFullscreen?: () => void;
 }
@@ -22,8 +22,7 @@ interface Recognition {
 }
 
 export function CameraFeed({
-  id,
-  name,
+  camera,
   status,
   className,
   onFullscreen,
@@ -36,8 +35,20 @@ export function CameraFeed({
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(true);
 
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
-  const { messages, isConnected } = useWebSocket(`${wsUrl}/ws/camera/${id}`);
+  const { state, send } = useWebSocketContext();
+
+  useEffect(() => {
+    if (state.isConnected) {
+      // Subscribe to camera feed
+      send({ 
+        type: 'subscribe', 
+        payload: { 
+          event: 'camera_feed',
+          cameraId: camera.id 
+        } 
+      });
+    }
+  }, [state.isConnected, camera.id, send]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -48,8 +59,12 @@ export function CameraFeed({
     const setupVideo = async () => {
       try {
         setIsConnecting(true);
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
+        if (camera.type === 'webcam') {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          video.srcObject = stream;
+        } else if (camera.type === 'ip') {
+          video.src = camera.url;
+        }
 
         video.onloadedmetadata = () => {
           setIsLoading(false);
@@ -76,22 +91,24 @@ export function CameraFeed({
         stream.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [id]);
+  }, [camera]);
 
-  // Update recognitions from WebSocket
+  // Handle recognition updates
   useEffect(() => {
-    if (!messages.length) return;
-    
-    const lastMessage = messages[messages.length - 1];
-    try {
-      const parsedMessage = JSON.parse(lastMessage);
-      if (parsedMessage.type === "recognition") {
-        setRecognitions(parsedMessage.data);
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'recognition' && data.payload.cameraId === camera.id) {
+          setRecognitions(data.payload.recognitions);
+        }
+      } catch (error) {
+        console.error('Failed to parse recognition data:', error);
       }
-    } catch (error) {
-      console.error("Failed to parse WebSocket message:", error);
-    }
-  }, [messages]);
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [camera.id]);
 
   // Handle fullscreen toggle
   const toggleFullscreen = () => {
@@ -154,7 +171,7 @@ export function CameraFeed({
           </div>
         )}
 
-        {!isConnected && !error && status === "active" && (
+        {!state.isConnected && !error && status === "active" && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90">
             <div className="text-center text-white">
               <LoadingOverlay open={true} message="Reconnecting..." />
@@ -166,7 +183,7 @@ export function CameraFeed({
       {/* Controls */}
       <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between bg-gradient-to-t from-black/80 to-transparent p-4">
         <div>
-          <h3 className="text-sm font-medium text-white">{name}</h3>
+          <h3 className="text-sm font-medium text-white">{camera.name}</h3>
           <p className={cn("text-xs", status === "active" ? "text-green-400" : "text-red-400")}>
             {status === "active" ? "Active" : "Inactive"}
           </p>
@@ -174,7 +191,7 @@ export function CameraFeed({
         <button
           onClick={toggleFullscreen}
           className="rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
-          disabled={!isConnected || !!error}
+          disabled={!state.isConnected || !!error}
         >
           {isFullscreen ? <Square className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
         </button>

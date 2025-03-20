@@ -1,25 +1,33 @@
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:18.19-slim AS builder
 WORKDIR /app
 
-# Install dependencies including OpenSSL
-RUN apk add --no-cache python3 make g++ netcat-openbsd openssl openssl-dev
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    netcat-traditional \
+    openssl \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
+# Set environment variables
+ENV BACKEND_URL=http://backend:8000
+ENV NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
+ENV DATABASE_URL="postgresql://postgres:postgres@db:5432/cernoid?schema=public"
+ENV NODE_ENV=production
+
+# Copy package files and Prisma schema
 COPY package*.json ./
-COPY next.config.js ./
-COPY tsconfig.json ./
-COPY tailwind.config.ts ./
-COPY postcss.config.js ./
+COPY prisma ./prisma/
 
 # Install dependencies
-RUN npm install --legacy-peer-deps
+RUN npm install --no-package-lock --legacy-peer-deps
 
-# Copy source code
-COPY app ./app
-COPY public ./public
-COPY .env* ./
-COPY prisma ./prisma
+# Copy the rest of the application
+COPY . .
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -28,39 +36,41 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine AS stage-1
+FROM node:18.19-slim AS runner
 
-# Install OpenSSL and other dependencies
-RUN apk add --no-cache curl bash netcat-openbsd openssl openssl-dev
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    netcat-traditional \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy necessary files from builder
+# Copy package files and Prisma schema
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install production dependencies
+RUN npm install --no-package-lock --legacy-peer-deps --production
+
+# Copy built application from builder
 COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/next.config.js ./next.config.js
 
-# Copy entrypoint script
-COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+# Set environment variables
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs \
-    && adduser -S nextjs -u 1001 \
-    && chown -R nextjs:nodejs /app
-
-# Switch to non-root user
-USER nextjs
-
-# Expose port
+# Expose the port the app runs on
 EXPOSE 3000
 
 # Health check with improved parameters
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -sf http://localhost:3000/api/health || exit 1
+    CMD curl -sf http://localhost:3000/health || exit 1
 
 # Start the application
-CMD ["./docker-entrypoint.sh"] 
+CMD ["npm", "start"] 

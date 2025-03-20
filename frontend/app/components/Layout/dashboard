@@ -1,0 +1,96 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Box, useTheme, useMediaQuery } from '@mui/material';
+import { TopBar } from '../Navigation/TopBar';
+import { Sidebar } from '../Navigation/Sidebar';
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
+
+interface DashboardLayoutProps {
+  children: React.ReactNode;
+}
+
+export function DashboardLayout({ children }: DashboardLayoutProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  // Close sidebar on mobile by default
+  useEffect(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  }, [isMobile]);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, isLoading, router]);
+
+  const handleSidebarClose = () => {
+    setSidebarOpen(false);
+  };
+
+  const handleSidebarOpen = () => {
+    setSidebarOpen(true);
+  };
+
+  const handleThemeToggle = () => {
+    setIsDarkMode(!isDarkMode);
+  };
+
+  if (isLoading) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          bgcolor: 'background.default',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      <TopBar
+        onSidebarToggle={handleSidebarOpen}
+        onThemeToggle={handleThemeToggle}
+        isDarkMode={isDarkMode}
+      />
+      <Sidebar
+        open={sidebarOpen}
+        onClose={handleSidebarClose}
+      />
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: { sm: `calc(100% - ${240}px)` },
+          ml: { sm: sidebarOpen ? `${240}px` : 0 },
+          transition: theme =>
+            theme.transitions.create('margin', {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.leavingScreen,
+            }),
+          minHeight: '100vh',
+          backgroundColor: theme.palette.background.default,
+        }}
+      >
+        <Box sx={{ height: 64 }} /> {/* Toolbar spacer */}
+        {children}
+      </Box>
+    </Box>
+  );
+} 

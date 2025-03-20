@@ -1,19 +1,16 @@
-// Remove or comment out the 'use client' directive if it exists
-// import type { Metadata } from 'next';
-import './globals.css';
-import { ThemeProvider } from './theme/ThemeProvider';
-import { DashboardLayout } from './components/Layout/DashboardLayout';
-import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
-import { usePathname } from 'next/navigation';
-import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import { ThemeProvider } from './providers/ThemeProvider';
 import { AuthProvider } from './providers/AuthProvider';
+import { WebSocketProvider } from './providers/WebSocketProvider';
+import { ServiceProvider } from './providers/ServiceProvider';
+import './globals.css';
+import { ErrorBoundary } from '@/components/shared/feedback';
 
-// Routes that don't use the app layout
-const publicRoutes = ['/login', '/register', '/forgot-password'];
+const inter = Inter({ subsets: ['latin'] });
 
-export const metadata: Metadata = {
-  title: 'CernoID - Secure Access Control',
-  description: 'Advanced facial recognition and access control system',
+export const metadata = {
+  title: 'CernoID Security System',
+  description: 'Advanced security and surveillance system with face recognition capabilities',
 };
 
 export default function RootLayout({
@@ -21,19 +18,20 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const isPublicRoute = publicRoutes.includes(pathname);
-
   return (
     <html lang="en">
-      <body>
-        <AppRouterCacheProvider>
-          <ThemeProvider>
-            <AuthProvider>
-              {isPublicRoute ? children : <DashboardLayout>{children}</DashboardLayout>}
-            </AuthProvider>
-          </ThemeProvider>
-        </AppRouterCacheProvider>
+      <body className={inter.className}>
+        <ErrorBoundary>
+          <ServiceProvider>
+            <ThemeProvider>
+              <AuthProvider>
+                <WebSocketProvider>
+                  {children}
+                </WebSocketProvider>
+              </AuthProvider>
+            </ThemeProvider>
+          </ServiceProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

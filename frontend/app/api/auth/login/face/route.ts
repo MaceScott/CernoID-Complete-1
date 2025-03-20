@@ -27,23 +27,16 @@
  * - Handles CORS preflight requests
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { validateRequest } from '@/api/utils/validation';
+import { checkRateLimit, rateLimits } from '@/api/utils/rate-limit';
+import { logger } from '@/api/utils/logger';
+import { createSessionToken, setSessionCookie, createSuccessResponse, createErrorResponse, createCorsResponse } from '@/api/utils/auth';
 import { z } from 'zod';
-import { cookies } from 'next/headers';
-import { sign } from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
-
-if (!process.env.JWT_SECRET) {
-  console.warn('Warning: Using default JWT secret. Please set JWT_SECRET environment variable in production.');
-}
-
-/**
- * Face login request validation schema
- * Expects base64 encoded image data
- */
+// Face login request schema
 const faceLoginSchema = z.object({
-  imageData: z.string(),
+  imageData: z.string().min(1),
 });
 
 /**
@@ -53,65 +46,53 @@ const faceLoginSchema = z.object({
  * @param request - HTTP request object containing face image data
  * @returns NextResponse with user data and session cookie, or error
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { imageData } = faceLoginSchema.parse(body);
+    // Log the request
+    logger.logRequest(request, 'Face login attempt');
 
-    // For demo purposes, we'll simulate face recognition
-    // In production, you would use a proper face recognition service
-    const isRecognized = true;
-
-    if (!isRecognized) {
-      return NextResponse.json(
-        { success: false, error: 'Face not recognized' },
-        { status: 401 }
-      );
+    // Check rate limit
+    if (!(await checkRateLimit(request, rateLimits.auth.faceLogin))) {
+      logger.warn('Rate limit exceeded for face login', { path: request.nextUrl.pathname });
+      return createErrorResponse('Too many face login attempts. Please try again later.', 429);
     }
 
-    // Create session token with user claims
-    const sessionToken = sign(
-      {
-        userId: '1',
-        email: 'admin@cernoid.com',
-        name: 'Admin User',
-        role: 'admin',
-        permissions: ['all'],
-      },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+    // Validate request body
+    const { imageData } = await validateRequest(request, faceLoginSchema);
 
-    // Set secure session cookie
-    cookies().set({
-      name: 'session',
-      value: sessionToken,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24, // 24 hours
-    });
+    // TODO: Replace with actual face recognition
+    // For now, simulate face recognition check
+    const faceRecognized = true;
+    if (!faceRecognized) {
+      logger.warn('Face not recognized', { path: request.nextUrl.pathname });
+      return createErrorResponse('Face not recognized', 401);
+    }
 
-    return NextResponse.json(
-      {
-        success: true,
-        user: {
-          id: '1',
-          email: 'admin@cernoid.com',
-          name: 'Admin User',
-          role: 'admin',
-          permissions: ['all'],
-        },
-      },
-      { status: 200 }
-    );
+    // TODO: Replace with actual user data from face recognition
+    const user = {
+      id: '123',
+      email: 'test@example.com',
+      name: 'Test User',
+      role: 'user'
+    };
+
+    // Create session token
+    const token = await createSessionToken(user);
+
+    // Set session cookie
+    const response = createSuccessResponse({ user });
+    await setSessionCookie(response, token);
+
+    logger.info('Face login successful', { userId: user.id });
+    return response;
   } catch (error) {
-    console.error('Face login error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Face login failed' },
-      { status: 500 }
-    );
+    logger.logError(error as Error, request);
+    
+    if (error instanceof z.ZodError) {
+      return createErrorResponse('Invalid face login request', 400);
+    }
+
+    return createErrorResponse('Face login failed', 500);
   }
 }
 
@@ -122,12 +103,5 @@ export async function POST(request: Request) {
  * @returns NextResponse with CORS headers
  */
 export async function OPTIONS() {
-  return NextResponse.json({}, {
-    headers: {
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    }
-  });
+  return createCorsResponse();
 } 

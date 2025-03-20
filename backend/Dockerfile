@@ -96,6 +96,10 @@ RUN mkdir -p /app/data /app/logs && \
     chmod -R 755 /app/data /app/logs
 
 ENV PYTHONPATH=/app/src
+
+# Set default environment
+ENV ENVIRONMENT=production
+
 EXPOSE 8000
 
 # Copy and set up entrypoint

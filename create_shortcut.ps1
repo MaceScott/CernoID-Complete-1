@@ -1,1 +1,0 @@
- = New-Object -ComObject WScript.Shell;  = .CreateShortcut(" C:\Users\maces\OneDrive\Desktop\CernoID.lnk\); .TargetPath = \C:\Users\maces\CernoID-Complete-1\scripts\start\start_cernoid.bat\; .WorkingDirectory = \C:\Users\maces\CernoID-Complete-1\; .IconLocation = \C:\Users\maces\CernoID-Complete-1\frontend\public\favicon.ico\; .Save()

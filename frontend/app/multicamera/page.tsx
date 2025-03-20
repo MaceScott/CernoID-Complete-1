@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Box, Typography, ToggleButtonGroup, ToggleButton } from '@mui/material';
 import MultiCameraGrid from '@/components/features/cameras/MultiCameraGrid';
-import { AuthGuard } from '@/components/Auth/AuthGuard';
+import { AuthGuard } from '@/components/Auth';
 
 export default function MultiCameraPage() {
   const [layout, setLayout] = useState<'2x2' | '3x3' | '4x4'>('2x2');

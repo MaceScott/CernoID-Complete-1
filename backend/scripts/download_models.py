@@ -6,9 +6,13 @@ from pathlib import Path
 import shutil
 import torch
 import torch.nn as nn
+import ssl
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Disable SSL verification for downloads
+ssl._create_default_https_context = ssl._create_unverified_context
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
 MODELS_DIR.mkdir(exist_ok=True)
@@ -119,7 +123,10 @@ def create_torch_models():
 def main():
     logger.info("Starting model downloads...")
     for filename, url in MODELS.items():
-        download_file(url, filename)
+        if not os.path.exists(os.path.join(MODELS_DIR, filename)):
+            download_file(url, filename)
+        else:
+            logger.info(f"{filename} already exists, skipping download")
     
     logger.info("Creating PyTorch models...")
     create_torch_models()

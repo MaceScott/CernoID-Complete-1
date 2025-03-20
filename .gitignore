@@ -1,30 +1,139 @@
-# Ignore VS Code and PyCharm settings
-.vscode/
-.idea/
-
-# Ignore Python virtual environments and compiled files
-venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Ignore logs and cache files
-logs/
-*.log
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+build/
+dist/
 .cache/
 
-# Ignore Git-related files
-.git/
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.cursor/
 
-# Ignore unnecessary folders
-tests/
-test_images/
-docs/
-credentials/
-dependencies/
-external_models/
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
 
-# Ignore SonarQube and Qodana settings
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+.pytest_cache/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Project specific
+backend/data/
+backend/models/
+backend/prisma/
+frontend/public/
+frontend/assets/
+frontend/.next/
+frontend/dist/
+frontend/build/
+frontend/coverage/
+frontend/.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.temp/
+.cache/
+
+# Dependencies
+.cernoid_backend.egg-info/
+
+# Environment files
+!.env.example
+
+# IDE and editor files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Testing
+.tox/
+.nox/
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Monitoring and metrics
+prometheus/
+grafana/
+elk/
+
+# Deployment
+deployment/
+k8s/
+aws/
+gcp/
+
+# Code quality
+.sonar/
 .qodana/
 .qodana.yaml
-coverage/
-node_modules
+sonar-project.properties
+
+# Misc
+*.pem
+.vercel
+.turbo

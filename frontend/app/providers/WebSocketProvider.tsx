@@ -1,24 +1,15 @@
-import { createContext, useContext } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+'use client';
+
+import { ReactNode, createContext, useContext, useEffect, useState } from 'react';
+import { wsService } from '../lib/websocket-service';
+import { WebSocketState } from '../types/shared';
 
 interface WebSocketContextType {
-  isConnected: boolean;
-  error: Event | null;
-  send: (data: unknown) => void;
-  messages: string[];
+  state: WebSocketState;
+  send: (message: any) => void;
 }
 
-const WebSocketContext = createContext<WebSocketContextType | null>(null);
-
-export function WebSocketProvider({ children }: { children: React.ReactNode }) {
-  const ws = useWebSocket();
-
-  return (
-    <WebSocketContext.Provider value={ws}>
-      {children}
-    </WebSocketContext.Provider>
-  );
-}
+const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
 export function useWebSocketContext() {
   const context = useContext(WebSocketContext);
@@ -26,4 +17,37 @@ export function useWebSocketContext() {
     throw new Error('useWebSocketContext must be used within a WebSocketProvider');
   }
   return context;
+}
+
+interface WebSocketProviderProps {
+  children: ReactNode;
+}
+
+export function WebSocketProvider({ children }: WebSocketProviderProps) {
+  const [state, setState] = useState<WebSocketState>({
+    isConnected: false,
+    reconnectAttempts: 0,
+  });
+
+  useEffect(() => {
+    const unsubscribe = wsService.onStateChange((newState) => {
+      setState(newState);
+    });
+
+    return () => {
+      unsubscribe();
+      wsService.disconnect();
+    };
+  }, []);
+
+  const contextValue: WebSocketContextType = {
+    state,
+    send: wsService.send,
+  };
+
+  return (
+    <WebSocketContext.Provider value={contextValue}>
+      {children}
+    </WebSocketContext.Provider>
+  );
 } 

@@ -32,27 +32,49 @@
 
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { ReactNode, createContext, useContext, useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { User, AuthContextType, LoginCredentials, ApiResponse, AuthResponse, RegisterData } from '@/lib/auth/types';
+import { loggingService } from '../lib/logging-service';
+import { User, ApiResponse } from '../types/shared';
+import { apiClient } from '../lib/api-client';
 
 // Routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password'];
+const PUBLIC_ROUTES = [
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/unauthorized'
+];
 
-export const AuthContext = createContext<AuthContextType>({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
-  error: null,
-  login: async () => ({ success: false }),
-  loginWithFace: async () => ({ success: false }),
-  logout: async () => {},
-  checkAuth: async () => {},
-  register: async () => ({ success: false }),
-  resetPassword: async () => ({ success: false }),
-  updateProfile: async () => ({ success: false }),
-  clearError: () => {},
-});
+interface AuthResponse {
+  user: User;
+  token: string;
+}
+
+interface AuthContextType {
+  isAuthenticated: boolean;
+  user: User | null;
+  isLoading: boolean;
+  error: string | null;
+  login: (credentials: { email: string; password: string }) => Promise<void>;
+  loginWithFace: (faceData: string) => Promise<void>;
+  logout: () => Promise<void>;
+  clearError: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function useAuthContext() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuthContext must be used within an AuthProvider');
+  }
+  return context;
+}
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
 
 /**
  * AuthProvider Component
@@ -61,52 +83,33 @@ export const AuthContext = createContext<AuthContextType>({
  * authentication state, and related operations. Handles automatic authentication
  * checks and protected route redirections.
  */
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
-  // Clear error state
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  const clearError = () => setError(null);
 
-  // Handle navigation based on auth state
-  const handleNavigation = useCallback(async (isAuthenticated: boolean) => {
-    const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
-    console.log('[AuthProvider] handleNavigation:', { 
-      isAuthenticated, 
-      isPublicRoute, 
-      currentPath: pathname 
-    });
-    
+  const handleNavigation = async (isAuthenticated: boolean) => {
+    const isPublicRoute = PUBLIC_ROUTES.some(route => pathname.startsWith(route));
+    loggingService.debug('Handling navigation', { isAuthenticated, isPublicRoute, pathname });
+
     if (isAuthenticated && isPublicRoute) {
-      console.log('[AuthProvider] Redirecting to dashboard');
       await router.replace('/dashboard');
-      console.log('[AuthProvider] Redirect completed');
     } else if (!isAuthenticated && !isPublicRoute && pathname !== '/') {
       await router.replace('/login');
     }
-  }, [pathname, router]);
+  };
 
-  /**
-   * Checks the current authentication status
-   * - Fetches user data from /api/auth/me
-   * - Updates authentication state
-   * - Handles protected route redirections
-   */
-  const checkAuth = useCallback(async () => {
+  const checkAuth = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/auth/me', {
-        credentials: 'include',
-      });
+      const response = await apiClient.get<AuthResponse>('/api/auth/me');
 
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
+      if (response.success && response.data) {
+        setUser(response.data.user);
         await handleNavigation(true);
       } else {
         setUser(null);
@@ -118,222 +121,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [handleNavigation]);
+  };
 
-  /**
-   * Handles traditional email/password login
-   * @param {LoginCredentials} credentials - User login credentials
-   * @returns {Promise<ApiResponse<AuthResponse>>} Login response with user data
-   */
-  const login = async (credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> => {
+  const login = async (credentials: { email: string; password: string }) => {
     try {
-      console.log('[AuthProvider] Login started');
       setIsLoading(true);
       clearError();
 
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-        credentials: 'include',
-      });
+      const response = await apiClient.post<AuthResponse>('/api/auth/login', credentials);
 
-      const data = await response.json();
-      console.log('[AuthProvider] Login response:', { 
-        ok: response.ok, 
-        status: response.status,
-        success: data.success 
-      });
-
-      if (response.ok && data.success) {
-        console.log('[AuthProvider] Setting user data');
-        setUser(data.user);
-        console.log('[AuthProvider] Initiating navigation');
+      if (response.success && response.data) {
+        setUser(response.data.user);
         await handleNavigation(true);
-        console.log('[AuthProvider] Navigation completed');
-        return { success: true, data };
       } else {
-        console.log('[AuthProvider] Login failed:', data.error);
-        setError(data.error || 'Login failed');
-        return { success: false, error: data.error };
+        setError(response.error || 'Login failed');
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Login failed';
-      console.error('[AuthProvider] Login error:', errorMessage);
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
+      setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setIsLoading(false);
     }
   };
 
-  /**
-   * Handles face recognition login
-   * @param {string} faceData - Base64 encoded face image data
-   * @returns {Promise<ApiResponse<AuthResponse>>} Login response with user data
-   */
-  const loginWithFace = async (faceData: string): Promise<ApiResponse<AuthResponse>> => {
+  const loginWithFace = async (faceData: string) => {
     try {
       setIsLoading(true);
       clearError();
 
-      const response = await fetch('/api/auth/login/face', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faceData }),
-        credentials: 'include',
-      });
+      const response = await apiClient.post<AuthResponse>('/api/auth/login/face', { faceData });
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setUser(data.user);
+      if (response.success && response.data) {
+        setUser(response.data.user);
         await handleNavigation(true);
-        return { success: true, data };
       } else {
-        setError(data.error || 'Face login failed');
-        return { success: false, error: data.error };
+        setError(response.error || 'Face login failed');
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Face login failed';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
+      setError(err instanceof Error ? err.message : 'Face login failed');
     } finally {
       setIsLoading(false);
     }
   };
 
-  /**
-   * Handles user logout
-   * - Clears user session
-   * - Redirects to login page
-   */
-  const logout = async (): Promise<void> => {
+  const logout = async () => {
     try {
       setIsLoading(true);
       clearError();
 
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await apiClient.post('/api/auth/logout');
     } finally {
       setUser(null);
-      setIsLoading(false);
       await handleNavigation(false);
+      setIsLoading(false);
     }
   };
 
-  /**
-   * Handles user registration
-   * @param {RegisterData} data - User registration data
-   * @returns {Promise<ApiResponse<AuthResponse>>} Registration response with user data
-   */
-  const register = async (data: RegisterData): Promise<ApiResponse<AuthResponse>> => {
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      const responseData = await response.json();
-
-      if (response.ok) {
-        setUser(responseData.user);
-        setError(null);
-        router.replace('/dashboard');
-        return { success: true, data: responseData };
-      } else {
-        setError(responseData.error || 'Registration failed');
-        return { success: false, error: responseData.error };
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Registration failed';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  };
-
-  /**
-   * Handles password reset request
-   * @param {string} email - User email address
-   * @returns {Promise<ApiResponse<void>>} Password reset response
-   */
-  const resetPassword = async (email: string): Promise<ApiResponse<void>> => {
-    try {
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setError(null);
-        return { success: true };
-      } else {
-        setError(data.error || 'Password reset failed');
-        return { success: false, error: data.error };
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Password reset failed';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  };
-
-  /**
-   * Updates user profile information
-   * @param {Partial<User>} data - Updated user data
-   * @returns {Promise<ApiResponse<User>>} Updated user profile
-   */
-  const updateProfile = async (data: Partial<User>): Promise<ApiResponse<User>> => {
-    try {
-      const response = await fetch('/api/auth/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      const responseData = await response.json();
-
-      if (response.ok) {
-        setUser(responseData.user);
-        setError(null);
-        return { success: true, data: responseData.user };
-      } else {
-        setError(responseData.error || 'Profile update failed');
-        return { success: false, error: responseData.error };
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Profile update failed';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  };
-
-  // Check auth status on mount and pathname change
   useEffect(() => {
-    console.log("[AuthProvider] Initializing, checking session");
+    loggingService.debug('Auth provider mounted');
     checkAuth();
-  }, [checkAuth]);
+  }, []);
 
-  const contextValue = {
-    user,
+  const contextValue: AuthContextType = {
     isAuthenticated: !!user,
+    user,
     isLoading,
     error,
     login,
     loginWithFace,
     logout,
-    checkAuth,
-    register,
-    resetPassword,
-    updateProfile,
     clearError,
   };
 
@@ -342,12 +197,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 } 

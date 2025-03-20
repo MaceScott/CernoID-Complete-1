@@ -49,20 +49,22 @@ export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
  * 
  * @property {string} id - Unique user identifier
  * @property {string} email - User's email address
- * @property {string} name - User's full name
+ * @property {string} username - User's username
  * @property {string} role - User's role in the system
  * @property {string[]} permissions - List of user permissions
- * @property {string[]} zones - List of security zones user has access to
- * @property {string} [avatar] - Optional user avatar URL
+ * @property {boolean} isActive - Whether the user is active
+ * @property {Date | undefined} lastLogin - Last login date
+ * @property {string[] | undefined} zones - List of security zones user has access to
  */
 export interface User {
   id: string;
   email: string;
-  name: string;
-  role: string;
+  username?: string;
+  role: 'admin' | 'user';
   permissions: string[];
-  zones: string[];
-  avatar?: string;
+  isActive: boolean;
+  lastLogin?: Date;
+  zones?: string[];
 }
 
 /**
@@ -114,6 +116,7 @@ export interface RegisterData extends LoginCredentials {
  */
 export interface AuthResponse {
   user: User;
+  token: string;
 }
 
 /**
@@ -127,8 +130,8 @@ export interface AuthResponse {
  */
 export interface ApiResponse<T> {
   success: boolean;
-  error?: string;
   data?: T;
+  error?: string;
 }
 
 /**
@@ -160,4 +163,11 @@ export interface AuthContextType {
   register: (data: RegisterData) => Promise<ApiResponse<AuthResponse>>;
   resetPassword: (email: string) => Promise<ApiResponse<void>>;
   updateProfile: (data: Partial<User>) => Promise<ApiResponse<User>>;
+  clearError: () => void;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 } 

@@ -1,13 +1,17 @@
-"""Database module initialization."""
-from .models import Base, metadata
-from .connection import DatabasePool
+"""
+Database module for the application.
+Provides database connection, models, migrations, and utilities.
+"""
 
-# Create a singleton database pool instance
-db_pool = DatabasePool()
+from .connection import DatabaseConnection
+from .models import *
+from .migrations import run_migrations
+from .service import DatabaseService
+from .schema import DatabaseSchema
 
 __all__ = [
-    'Base',
-    'metadata',
-    'DatabasePool',
-    'db_pool'
+    'DatabaseConnection',
+    'DatabaseService',
+    'DatabaseSchema',
+    'run_migrations',
 ] 
