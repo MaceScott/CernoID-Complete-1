@@ -75,6 +75,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     const isActive = pathname === item.path;
     const children = item.children as typeof navigationConfig | undefined;
     const hasChildren = Array.isArray(children) && children.length > 0;
+    const Icon = item.icon;
 
     return (
       <React.Fragment key={item.path}>
@@ -86,7 +87,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               backgroundColor: isActive ? theme.palette.action.selected : 'transparent',
             }}
           >
-            <ListItemIcon>{item.icon}</ListItemIcon>
+            <ListItemIcon>
+              <Icon />
+            </ListItemIcon>
             <ListItemText primary={item.title} />
             {hasChildren && (isExpanded ? <ExpandLess /> : <ExpandMore />)}
           </ListItemButton>
@@ -104,8 +107,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
   return (
     <Drawer
-      variant={isMobile ? 'temporary' : 'persistent'}
-      anchor="left"
+      variant={isMobile ? 'temporary' : 'permanent'}
       open={open}
       onClose={onClose}
       sx={{
@@ -114,7 +116,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
-          backgroundColor: theme.palette.background.paper,
+          borderRight: `1px solid ${theme.palette.divider}`,
         },
       }}
     >

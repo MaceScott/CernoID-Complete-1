@@ -2,15 +2,15 @@
 
 import { useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
-import { RecognitionClient } from '../features/recognition/RecognitionClient';
-import { FaceDetectionResult } from '../features/recognition';
+import { RecognitionClient } from '@/components/features/recognition/RecognitionClient';
+import { FaceDetectionResult } from '@/types/recognition';
 
-interface FaceRegistrationProps {
-  onRegister: (faceData: FormData) => Promise<void>;
+export interface FaceRegistrationProps {
+  onSuccess?: () => void;
   onError: (error: Error) => void;
 }
 
-export function FaceRegistration({ onRegister, onError }: FaceRegistrationProps) {
+export function FaceRegistration({ onSuccess, onError }: FaceRegistrationProps) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [capturedFaces, setCapturedFaces] = useState<FormData[]>([]);
 
@@ -19,10 +19,8 @@ export function FaceRegistration({ onRegister, onError }: FaceRegistrationProps)
       setCapturedFaces(prev => [...prev, faceData]);
       if (capturedFaces.length >= 2) {
         setIsCapturing(false);
-        // Register all captured faces
-        for (const face of capturedFaces) {
-          await onRegister(face);
-        }
+        // Registration successful
+        onSuccess?.();
       }
     } catch (err) {
       onError(err instanceof Error ? err : new Error('Failed to register face'));

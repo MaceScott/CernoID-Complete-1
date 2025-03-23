@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Camera, AlertCircle, Maximize2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWebSocketContext } from "@/providers/WebSocketProvider";
 import { LoadingOverlay } from "@/components/shared/feedback";
-import Skeleton from "@/components/ui/skeleton";
-import { CameraConfig } from "@/types/shared";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CameraConfig } from "@/types";
+import { Box, CircularProgress, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 interface CameraFeedProps {
   camera: CameraConfig;
-  status: 'active' | 'inactive' | 'error';
+  status: CameraConfig['status'];
   className?: string;
   onFullscreen?: () => void;
 }
@@ -38,7 +40,7 @@ export function CameraFeed({
   const { state, send } = useWebSocketContext();
 
   useEffect(() => {
-    if (state.isConnected) {
+    if (state.connected) {
       // Subscribe to camera feed
       send({ 
         type: 'subscribe', 
@@ -48,7 +50,7 @@ export function CameraFeed({
         } 
       });
     }
-  }, [state.isConnected, camera.id, send]);
+  }, [state.connected, camera.id, send]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -62,8 +64,12 @@ export function CameraFeed({
         if (camera.type === 'webcam') {
           stream = await navigator.mediaDevices.getUserMedia({ video: true });
           video.srcObject = stream;
-        } else if (camera.type === 'ip') {
-          video.src = camera.url;
+        } else if (camera.type === 'ip' && camera.streamUrl) {
+          video.src = camera.streamUrl;
+        } else {
+          setError("Camera stream URL is not configured");
+          setIsLoading(false);
+          setIsConnecting(false);
         }
 
         video.onloadedmetadata = () => {
@@ -171,7 +177,7 @@ export function CameraFeed({
           </div>
         )}
 
-        {!state.isConnected && !error && status === "active" && (
+        {!state.connected && !error && status === "active" && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90">
             <div className="text-center text-white">
               <LoadingOverlay open={true} message="Reconnecting..." />
@@ -191,7 +197,7 @@ export function CameraFeed({
         <button
           onClick={toggleFullscreen}
           className="rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
-          disabled={!state.isConnected || !!error}
+          disabled={!state.connected || !!error}
         >
           {isFullscreen ? <Square className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
         </button>

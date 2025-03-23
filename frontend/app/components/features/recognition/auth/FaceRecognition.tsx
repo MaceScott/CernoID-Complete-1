@@ -1,7 +1,9 @@
 "use client"
 
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
+import { Typography } from '@mui/material';
 import { RecognitionClient } from '../core/RecognitionClient';
+import { DEFAULT_RECOGNITION_CONFIG } from '../../../../types/config/recognition';
 
 interface AuthFaceRecognitionProps {
   onSuccess: (faceData: FormData) => void;
@@ -23,7 +25,7 @@ export function AuthFaceRecognition({ onSuccess, onError }: AuthFaceRecognitionP
         onError={onError}
         showResults={false}
         recognitionOptions={{
-          minConfidence: 0.8,
+          ...DEFAULT_RECOGNITION_CONFIG,
           enableLandmarks: true,
           enableDescriptors: true
         }}

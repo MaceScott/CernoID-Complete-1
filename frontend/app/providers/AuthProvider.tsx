@@ -35,7 +35,7 @@
 import { ReactNode, createContext, useContext, useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { loggingService } from '../lib/logging-service';
-import { User, ApiResponse } from '../types/shared';
+import { User, ApiResponse } from '@/types';
 import { apiClient } from '../lib/api-client';
 
 // Routes that don't require authentication

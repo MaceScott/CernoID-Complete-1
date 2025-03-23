@@ -1,12 +1,12 @@
 'use client';
 
 import { ReactNode, createContext, useContext, useEffect, useState } from 'react';
-import { wsService } from '../lib/websocket-service';
-import { WebSocketState } from '../types/shared';
+import { websocketService } from '../lib/websocket-service';
+import { WebSocketState, WebSocketMessage } from '@/types';
 
 interface WebSocketContextType {
   state: WebSocketState;
-  send: (message: any) => void;
+  send: (message: WebSocketMessage) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -25,24 +25,41 @@ interface WebSocketProviderProps {
 
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const [state, setState] = useState<WebSocketState>({
-    isConnected: false,
-    reconnectAttempts: 0,
+    connected: false,
+    connecting: false,
+    error: null,
+    lastMessage: null
   });
 
   useEffect(() => {
-    const unsubscribe = wsService.onStateChange((newState) => {
-      setState(newState);
-    });
+    websocketService.connect();
+
+    const handleOpen = () => {
+      setState(prev => ({ ...prev, connected: true, connecting: false, error: null }));
+    };
+
+    const handleClose = () => {
+      setState(prev => ({ ...prev, connected: false, connecting: false }));
+    };
+
+    const handleError = (error: Event) => {
+      setState(prev => ({ ...prev, error: 'Connection error', connecting: false }));
+    };
+
+    const handleMessage = (message: WebSocketMessage) => {
+      setState(prev => ({ ...prev, lastMessage: message }));
+    };
+
+    websocketService.subscribe('message', handleMessage);
 
     return () => {
-      unsubscribe();
-      wsService.disconnect();
+      websocketService.disconnect();
     };
   }, []);
 
   const contextValue: WebSocketContextType = {
     state,
-    send: wsService.send,
+    send: websocketService.send
   };
 
   return (

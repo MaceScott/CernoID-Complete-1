@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { faceRecognitionService } from '@/lib/services/face-recognition';
-import { FaceDetectionResult, RecognitionOptions } from '@/components/features/recognition';
+import { FaceRecognitionService } from '@/lib/services/face-recognition';
+import { FaceDetectionResult, RecognitionOptions } from '@/types/recognition';
 
 interface UseFaceRecognitionOptions {
   onDetection?: (detection: FaceDetectionResult) => void;
@@ -34,6 +34,7 @@ export function useFaceRecognition({
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const faceRecognitionService = FaceRecognitionService.getInstance();
 
   const handleError = useCallback((err: Error) => {
     setError(err.message);

@@ -35,19 +35,9 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { BaseFrame } from '@/desktop/BaseFrame';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CameraConfig } from '@/types';
 
 const MotionPaper = motion(Paper);
-
-interface Camera {
-  id: string;
-  name: string;
-  type: 'facial' | 'security';
-  status: 'online' | 'offline';
-  stream: MediaStream | null;
-  facesDetected: number;
-  unknownFaces: number;
-  lastAlert?: string;
-}
 
 interface FaceDetection {
   id: string;
@@ -63,12 +53,12 @@ interface FaceDetection {
 
 export function MultiCameraClient() {
   const { user } = useAuth();
-  const [cameras, setCameras] = useState<Camera[]>([]);
+  const [cameras, setCameras] = useState<CameraConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'facial' | 'security'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'single'>('grid');
-  const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [selectedCamera, setSelectedCamera] = useState<CameraConfig | null>(null);
   const [alert, setAlert] = useState<{ message: string; severity: 'warning' | 'error' } | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
   const canvasRefs = useRef<{ [key: string]: HTMLCanvasElement | null }>({});
@@ -99,7 +89,8 @@ export function MultiCameraClient() {
 
   useEffect(() => {
     // WebSocket connection for real-time updates
-    const ws = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws');
+    const wsUrl = typeof window !== 'undefined' ? window.location.origin.replace(/^http/, 'ws') : 'ws://localhost:8000/ws';
+    const ws = new WebSocket(wsUrl);
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -248,160 +239,83 @@ export function MultiCameraClient() {
                 <Grid 
                   item 
                   xs={12} 
-                  sm={viewMode === 'single' ? 12 : 6} 
-                  md={viewMode === 'single' ? 12 : 4} 
+                  md={viewMode === 'single' ? 12 : 6}
                   key={camera.id}
                 >
-                  <MotionPaper 
-                    layout
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.3 }}
-                    sx={{ 
-                      p: 2,
+                  <MotionPaper
+                    elevation={3}
+                    sx={{
                       position: 'relative',
-                      '&:hover .camera-controls': {
-                        opacity: 1
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      '&:hover': {
+                        transform: 'scale(1.02)',
+                        transition: 'transform 0.2s ease-in-out'
                       }
                     }}
+                    onClick={() => viewMode === 'grid' && setSelectedCamera(camera)}
                   >
-                    <Box sx={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      mb: 1
-                    }}>
-                      <Typography variant="h6">
-                        {camera.name}
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {camera.type === 'facial' && (
-                          <Tooltip title="Face Recognition Active">
-                            <Badge badgeContent={camera.facesDetected} color="primary">
-                              <FaceIcon color="action" />
-                            </Badge>
-                          </Tooltip>
-                        )}
-                        {camera.unknownFaces > 0 && (
-                          <Tooltip title="Unknown Faces Detected">
-                            <Badge badgeContent={camera.unknownFaces} color="error">
-                              <WarningIcon color="error" />
-                            </Badge>
-                          </Tooltip>
-                        )}
-                        {camera.status === 'online' ? (
-                          <Tooltip title="Camera Online">
-                            <OnlineIcon color="success" />
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="Camera Offline">
-                            <OfflineIcon color="error" />
-                          </Tooltip>
+                    <Box sx={{ position: 'relative', paddingTop: '56.25%' }}>
+                      <video
+                        ref={el => { videoRefs.current[camera.id] = el; }}
+                        src={camera.streamUrl}
+                        autoPlay
+                        playsInline
+                        muted
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }}
+                        onLoadedMetadata={(e) => {
+                          const video = e.target as HTMLVideoElement;
+                          renderFaceDetections(camera.id, video);
+                        }}
+                      />
+                      <canvas
+                        ref={el => { canvasRefs.current[camera.id] = el; }}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%'
+                        }}
+                      />
+                      <Box sx={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        display: 'flex',
+                        gap: 1
+                      }}>
+                        <Chip
+                          icon={camera.status === 'active' ? <OnlineIcon /> : <OfflineIcon />}
+                          label={camera.status === 'active' ? 'Online' : 'Offline'}
+                          color={camera.status === 'active' ? 'success' : 'error'}
+                          size="small"
+                        />
+                        {camera.alerts && camera.alerts.length > 0 && (
+                          <Chip
+                            icon={<WarningIcon />}
+                            label={`${camera.alerts.length} Alerts`}
+                            color="warning"
+                            size="small"
+                          />
                         )}
                       </Box>
                     </Box>
-                    
-                    <Box sx={{ 
-                      width: '100%',
-                      height: viewMode === 'single' ? 600 : 200,
-                      bgcolor: 'black',
-                      position: 'relative'
-                    }}>
-                      {camera.status === 'online' ? (
-                        <>
-                          <video
-                            ref={el => {
-                              videoRefs.current[camera.id] = el;
-                            }}
-                            autoPlay
-                            playsInline
-                            muted
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover'
-                            }}
-                          />
-                          <canvas
-                            ref={el => {
-                              canvasRefs.current[camera.id] = el;
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              width: '100%',
-                              height: '100%',
-                              pointerEvents: 'none'
-                            }}
-                          />
-                          <Box 
-                            className="camera-controls"
-                            sx={{
-                              position: 'absolute',
-                              top: 0,
-                              right: 0,
-                              p: 1,
-                              opacity: 0,
-                              transition: 'opacity 0.2s',
-                              bgcolor: 'rgba(0,0,0,0.5)'
-                            }}
-                          >
-                            <IconButton
-                              size="small"
-                              sx={{ color: 'white' }}
-                              onClick={() => viewMode === 'single' 
-                                ? handleViewModeChange('grid')
-                                : setSelectedCamera(camera)
-                              }
-                            >
-                              {viewMode === 'single' ? (
-                                <FullscreenExitIcon />
-                              ) : (
-                                <FullscreenIcon />
-                              )}
-                            </IconButton>
-                          </Box>
-                        </>
-                      ) : (
-                        <Box sx={{
-                          height: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'text.secondary'
-                        }}>
-                          <Typography>Camera Offline</Typography>
-                        </Box>
-                      )}
+                    <Box sx={{ p: 2 }}>
+                      <Typography variant="h6" noWrap>
+                        {camera.name}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" noWrap>
+                        {camera.location || 'No location specified'}
+                      </Typography>
                     </Box>
-
-                    {camera.lastAlert && (
-                      <Alert 
-                        severity="warning" 
-                        sx={{ mt: 2 }}
-                        action={
-                          <IconButton
-                            aria-label="close"
-                            color="inherit"
-                            size="small"
-                            onClick={() => {
-                              setCameras(prev => 
-                                prev.map(cam => 
-                                  cam.id === camera.id 
-                                    ? { ...cam, lastAlert: undefined }
-                                    : cam
-                                )
-                              );
-                            }}
-                          >
-                            <CloseIcon fontSize="inherit" />
-                          </IconButton>
-                        }
-                      >
-                        {camera.lastAlert}
-                      </Alert>
-                    )}
                   </MotionPaper>
                 </Grid>
               ))}

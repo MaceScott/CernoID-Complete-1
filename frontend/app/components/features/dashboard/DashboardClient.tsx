@@ -37,7 +37,7 @@ export const DashboardClient = () => {
               <Typography variant="h6" gutterBottom>
                 Security Zones
               </Typography>
-              {user.zones.length > 0 ? (
+              {user.zones && user.zones.length > 0 ? (
                 <ul>
                   {user.zones.map((zone, index) => (
                     <li key={index}>{zone}</li>

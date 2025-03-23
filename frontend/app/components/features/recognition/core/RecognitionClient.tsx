@@ -2,7 +2,7 @@
 
 import { Box } from '@mui/material';
 import { RecognitionViewer } from './RecognitionViewer';
-import { RecognitionOptions } from '../types';
+import { RecognitionOptions } from '@/types/recognition';
 
 interface RecognitionClientProps {
   onCapture?: (faceData: FormData) => void;

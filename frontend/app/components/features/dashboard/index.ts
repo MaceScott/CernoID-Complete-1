@@ -1,3 +1,3 @@
 export { DashboardClient as Dashboard } from './DashboardClient';
-export { Header } from '@/components/Layout/Header';
-export { default as Sidebar } from '@/components/Navigation/Sidebar'; 
+export { TopBar as Header } from '@/components/Navigation/TopBar';
+export { Sidebar } from '@/components/Navigation/sidebar/Sidebar'; 

@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@types/node": "^22.13.11"
+  },
+  "dependencies": {
+    "lucide-react": "^0.483.0"
+  }
+}

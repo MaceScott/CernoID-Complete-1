@@ -37,6 +37,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '@/hooks/useAuth';
 import { BaseFrame } from '@/desktop/BaseFrame';
+import { CameraConfig } from '@/types';
 
 interface User {
   id: string;
@@ -44,19 +45,6 @@ interface User {
   email: string;
   role: 'admin' | 'user' | 'viewer';
   status: 'active' | 'suspended';
-}
-
-interface Camera {
-  id: string;
-  name: string;
-  location: string;
-  type: 'facial' | 'security';
-  enabled: boolean;
-  settings: {
-    resolution: string;
-    frameRate: number;
-    recording: boolean;
-  };
 }
 
 interface Log {
@@ -68,11 +56,15 @@ interface Log {
   details: string;
 }
 
-export function AdminClient() {
+interface AdminClientProps {
+  // ... props ...
+}
+
+export function AdminClient({ /* props */ }: AdminClientProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState(0);
   const [users, setUsers] = useState<User[]>([]);
-  const [cameras, setCameras] = useState<Camera[]>([]);
+  const [cameras, setCameras] = useState<CameraConfig[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +74,7 @@ export function AdminClient() {
   }>({ open: false, user: null });
   const [cameraDialog, setCameraDialog] = useState<{
     open: boolean;
-    camera: Partial<Camera> | null;
+    camera: Partial<CameraConfig> | null;
   }>({ open: false, camera: null });
 
   useEffect(() => {
@@ -111,7 +103,16 @@ export function AdminClient() {
           location: 'Front Door',
           type: 'facial',
           enabled: true,
-          settings: { resolution: '1080p', frameRate: 30, recording: true }
+          streamUrl: 'rtsp://example.com/camera1',
+          status: 'active',
+          url: 'rtsp://example.com/camera1',
+          settings: { 
+            resolution: '1080p', 
+            fps: 30, 
+            quality: 80,
+            recording: true 
+          },
+          alerts: []
         },
         {
           id: '2',
@@ -119,7 +120,16 @@ export function AdminClient() {
           location: 'Exterior',
           type: 'security',
           enabled: true,
-          settings: { resolution: '720p', frameRate: 24, recording: true }
+          streamUrl: 'rtsp://example.com/camera2',
+          status: 'active',
+          url: 'rtsp://example.com/camera2',
+          settings: { 
+            resolution: '720p', 
+            fps: 24, 
+            quality: 80,
+            recording: true 
+          },
+          alerts: []
         }
       ]);
 
@@ -162,17 +172,28 @@ export function AdminClient() {
     }
   };
 
-  const handleCameraSave = async (cameraData: Partial<Camera>) => {
+  const handleCameraSave = async (cameraData: Partial<CameraConfig>) => {
     try {
       // In a real app, this would be an API call
       if (cameraData.id) {
         setCameras(prev => prev.map(c => c.id === cameraData.id ? { ...c, ...cameraData } : c));
       } else {
-        setCameras(prev => [...prev, { ...cameraData, id: Date.now().toString() } as Camera]);
+        setCameras(prev => [...prev, { 
+          ...cameraData, 
+          id: Date.now().toString(),
+          status: 'active',
+          streamUrl: cameraData.url || '',
+          settings: {
+            resolution: '1080p',
+            fps: 30,
+            quality: 80,
+            recording: false
+          }
+        } as CameraConfig]);
       }
       setCameraDialog({ open: false, camera: null });
-    } catch (err) {
-      setError('Failed to save camera');
+    } catch (error) {
+      console.error('Failed to save camera:', error);
     }
   };
 
@@ -449,11 +470,13 @@ export function AdminClient() {
                   value={cameraDialog.camera?.type || ''}
                   onChange={e => setCameraDialog(prev => ({
                     ...prev,
-                    camera: { ...prev.camera!, type: e.target.value as Camera['type'] }
+                    camera: { ...prev.camera!, type: e.target.value as CameraConfig['type'] }
                   }))}
                 >
                   <MenuItem value="facial">Facial Recognition</MenuItem>
                   <MenuItem value="security">Security</MenuItem>
+                  <MenuItem value="indoor">Indoor</MenuItem>
+                  <MenuItem value="outdoor">Outdoor</MenuItem>
                 </Select>
               </FormControl>
               <FormControlLabel

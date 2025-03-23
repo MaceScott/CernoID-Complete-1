@@ -10,7 +10,7 @@ import {
   FormControlLabel,
   Stack
 } from '@mui/material';
-import { RecognitionOptions } from '../types';
+import { RecognitionOptions } from '@/types/recognition';
 
 interface FaceDetectionSettingsProps {
   options: RecognitionOptions;

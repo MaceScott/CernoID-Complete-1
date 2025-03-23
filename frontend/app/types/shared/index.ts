@@ -110,4 +110,73 @@ export interface AppConfig {
   apiUrl: string;
   wsUrl: string;
   environment: 'development' | 'production' | 'test';
+}
+
+export interface CameraConfig {
+  id: string;
+  name: string;
+  type: 'webcam' | 'ip' | 'facial' | 'security' | 'indoor' | 'outdoor';
+  url?: string;
+  streamUrl: string;
+  status: 'active' | 'inactive' | 'error';
+  enabled: boolean;
+  location?: string;
+  zoneId?: string;
+  zone?: {
+    id: string;
+    name: string;
+    level: number;
+  };
+  settings?: {
+    resolution?: string;
+    fps?: number;
+    quality?: number;
+    recording?: boolean;
+  };
+  alerts?: Array<{
+    id: string;
+    type: string;
+    severity: 'low' | 'medium' | 'high';
+    message: string;
+    status: 'open' | 'resolved' | 'dismissed';
+    resolvedAt?: string;
+    resolvedBy?: string;
+  }>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AppSettings {
+    theme: 'light' | 'dark';
+    language: string;
+    notifications: {
+        enabled: boolean;
+        sound: boolean;
+        desktop: boolean;
+    };
+    security: {
+        token_expiry: number;
+        max_attempts: number;
+        lockout_duration: number;
+        require_2fa: boolean;
+        require_facial_recognition: boolean;
+        require_password: boolean;
+        allowed_admin_roles: string[];
+    };
+    display: {
+        density: 'compact' | 'comfortable' | 'spacious';
+        fontSize: number;
+        showThumbnails: boolean;
+    };
+    recognition: {
+        min_confidence: number;
+        max_faces: number;
+        use_gpu: boolean;
+        model_type: string;
+    };
+    system: {
+        autoUpdate: boolean;
+        logLevel: 'debug' | 'info' | 'warn' | 'error';
+        retentionDays: number;
+    };
 } 

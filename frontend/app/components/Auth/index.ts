@@ -3,8 +3,8 @@ export * from '@/types/auth';
 
 // Form components
 export * from './forms/LoginForm';
-export * from './forms/RegisterForm';
-export * from './forms/ForgotPasswordForm';
+export * from './forms/Register';
+export * from './forms/ForgotPassword';
 
 // Face recognition components
 export * from './face/FaceRecognition';

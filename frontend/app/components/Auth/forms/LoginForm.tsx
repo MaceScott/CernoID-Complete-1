@@ -15,8 +15,8 @@ import {
   Divider
 } from '@mui/material';
 import { useAuth } from '@/hooks/useAuth';
-import { FaceRecognition } from '../face/FaceRecognition';
-import { LoginData } from '../types';
+import { RecognitionClient } from '@/components/features/recognition/RecognitionClient';
+import { LoginCredentials } from '@/lib/auth/types';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -49,7 +49,7 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState(0);
-  const [formData, setFormData] = useState<LoginData>({
+  const [formData, setFormData] = useState<LoginCredentials>({
     email: '',
     password: ''
   });
@@ -86,7 +86,9 @@ export function LoginForm() {
     setError(null);
 
     try {
-      await loginWithFace(faceData);
+      const formData = new FormData();
+      formData.append('face', faceData);
+      await loginWithFace(formData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Face login failed');
     } finally {
@@ -156,9 +158,28 @@ export function LoginForm() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
-          <FaceRecognition
-            onSuccess={handleFaceLogin}
+          <RecognitionClient
+            title="Face Login"
+            description="Please look directly at the camera and ensure good lighting for face recognition."
+            onCapture={async (formData) => {
+              setLoading(true);
+              setError(null);
+              try {
+                await loginWithFace(formData);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Face login failed');
+              } finally {
+                setLoading(false);
+              }
+            }}
             onError={(err) => setError(err.message)}
+            showResults={false}
+            showControls={true}
+            recognitionOptions={{
+              minConfidence: 0.8,
+              enableLandmarks: true,
+              enableDescriptors: true
+            }}
           />
         </TabPanel>
 

@@ -28,4 +28,4 @@ class DetectionConfig:
     min_neighbors: int = 5
     use_gpu: bool = True
     batch_size: int = 8
-    confidence_threshold: float = 0.9 
+    confidence_threshold: float = 0.85 

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Box, CssBaseline, useTheme, useMediaQuery, CircularProgress, Typography } from '@mui/material';
-import { Sidebar } from '@/components/Navigation/Sidebar';
+import { Sidebar } from '@/components/Navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 

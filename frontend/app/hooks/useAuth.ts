@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import type { User, AuthResponse } from '@/lib/auth/types';
+import type { User, AuthResponse, RegisterData } from '@/lib/auth/types';
 
 interface AuthState {
   user: User | null;
@@ -126,6 +126,40 @@ export function useAuth() {
     }
   };
 
+  const register = async (data: RegisterData) => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Registration failed');
+      }
+
+      const { user, token } = await response.json() as AuthResponse;
+      setState({
+        user,
+        token,
+        isLoading: false,
+        error: null,
+        lastActivity: Date.now(),
+      });
+
+      return { success: true };
+    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Registration failed',
+      }));
+      return { success: false, error: err instanceof Error ? err.message : 'Registration failed' };
+    }
+  };
+
   const logout = () => {
     setState({
       user: null,
@@ -144,6 +178,7 @@ export function useAuth() {
     error: state.error,
     login,
     loginWithFace,
+    register,
     logout,
   };
 }

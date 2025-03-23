@@ -36,7 +36,7 @@ const dynamicRouteMap: Record<string, (param: string) => string> = {
   eventId: (id) => `Event ${id}`,
 };
 
-export default function Breadcrumbs() {
+export const Breadcrumbs = () => {
   const pathname = usePathname();
   const theme = useTheme();
 
@@ -125,4 +125,4 @@ export default function Breadcrumbs() {
       </MuiBreadcrumbs>
     </Box>
   );
-} 
+}; 

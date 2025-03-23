@@ -1,39 +1,41 @@
 # Build stage
 FROM node:18.19-slim AS builder
-WORKDIR /app
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
     g++ \
-    netcat-traditional \
-    openssl \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables
-ENV BACKEND_URL=http://backend:8000
-ENV NEXT_PUBLIC_BACKEND_URL=http://backend:8000
-ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
-ENV DATABASE_URL="postgresql://postgres:postgres@db:5432/cernoid?schema=public"
-ENV NODE_ENV=production
+WORKDIR /app
 
-# Copy package files and Prisma schema
+# Set build environment variables
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS="--max_old_space_size=2048"
+ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+ENV NPM_CONFIG_FETCH_RETRIES=5
+ENV NPM_CONFIG_FETCH_RETRY_FACTOR=2
+ENV NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=10000
+ENV NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=60000
+
+# Copy package files
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm install --no-package-lock --legacy-peer-deps
+# Install dependencies with retry logic
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 10000 && \
+    npm config set fetch-retry-maxtimeout 60000 && \
+    npm install --no-audit --no-fund --verbose
 
-# Copy the rest of the application
+# Copy source code
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate
-
-# Build the application
-RUN npm run build
+# Generate Prisma client and build
+RUN npx prisma generate && \
+    npm run build
 
 # Production stage
 FROM node:18.19-slim AS runner
@@ -42,35 +44,37 @@ FROM node:18.19-slim AS runner
 RUN apt-get update && apt-get install -y \
     curl \
     netcat-traditional \
-    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files and Prisma schema
-COPY package*.json ./
-COPY prisma ./prisma/
+# Create non-root user
+RUN useradd -r -u 1001 nextjs && \
+    mkdir -p /app/data /app/public && \
+    chown -R nextjs:nextjs /app
 
-# Install production dependencies
-RUN npm install --no-package-lock --legacy-peer-deps --production
-
-# Copy built application from builder
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.js ./next.config.js
+# Copy necessary files from builder
+COPY --chown=nextjs:nextjs package*.json ./
+COPY --chown=nextjs:nextjs prisma ./prisma/
+COPY --chown=nextjs:nextjs --from=builder /app/.next ./.next
+COPY --chown=nextjs:nextjs --from=builder /app/public ./public
+COPY --chown=nextjs:nextjs --from=builder /app/node_modules ./node_modules
+COPY --chown=nextjs:nextjs --from=builder /app/next.config.js ./
+COPY --chown=nextjs:nextjs --from=builder /app/package.json ./
 
 # Set environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Expose the port the app runs on
+# Switch to non-root user
+USER nextjs
+
+# Expose port
 EXPOSE 3000
 
-# Health check with improved parameters
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -sf http://localhost:3000/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
 
 # Start the application
 CMD ["npm", "start"] 

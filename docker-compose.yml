@@ -1,4 +1,4 @@
-version: '3.8'
+name: cernoid
 
 x-logging: &default-logging
   driver: "json-file"
@@ -11,6 +11,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
     ports:
       - "3000:3000"
     environment:
@@ -18,46 +20,74 @@ services:
       - NEXT_PUBLIC_API_URL=http://backend:8000
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
-    depends_on:
-      - backend
-      - db
+      - NEXT_TELEMETRY_DISABLED=1
+      - PRISMA_GENERATE_DATAPROXY=false
+      - PRISMA_SCHEMA_PATH=/app/prisma/schema.prisma
     volumes:
-      - frontend_data:/app/data
+      - frontend_data:/app/data:rw
+      - ./frontend/public:/app/public:ro
+      - models_data:/app/public/models:ro
+      - ./frontend/prisma:/app/prisma:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
     logging: *default-logging
+    networks:
+      - cernoid_network
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        - ENVIRONMENT=production
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cernoid
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET}
-      - NODE_ENV=production
+      - ENVIRONMENT=production
       - FACE_RECOGNITION_MODEL_PATH=/app/models/face_recognition
-      - FACE_DETECTION_CONFIDENCE=0.6
+      - FACE_DETECTION_CONFIDENCE=0.85
       - LOG_LEVEL=INFO
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
-    depends_on:
-      - db
-      - redis
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-cernoid}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      - ALEMBIC_CONFIG=/app/alembic.ini
     volumes:
-      - backend_data:/app/data
-      - ../models:/app/models
-      - ../logs:/app/logs
+      - backend_data:/app/data:rw
+      - models_data:/app/models:rw
+      - ./logs:/app/logs:rw
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
     logging: *default-logging
+    networks:
+      - cernoid_network
 
   db:
     image: postgres:15-alpine
@@ -68,13 +98,17 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
       - POSTGRES_DB=${DB_NAME:-cernoid}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data:rw
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-cernoid}"]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 40s
     logging: *default-logging
+    networks:
+      - cernoid_network
 
   redis:
     image: redis:7-alpine
@@ -85,33 +119,43 @@ services:
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_DB=${REDIS_DB:-0}
     volumes:
-      - redis_data:/data
+      - redis_data:/data:rw
     command: redis-server --appendonly yes
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 40s
     logging: *default-logging
+    networks:
+      - cernoid_network
 
   monitoring:
     image: grafana/grafana:latest
     ports:
-      - "3001:3000"
+      - "3002:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_HTTP_PORT=3000
+      - GF_SERVER_ROOT_URL=http://localhost:3002
     volumes:
-      - grafana_data:/var/lib/grafana
+      - grafana_data:/var/lib/grafana:rw
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
     logging: *default-logging
+    networks:
+      - cernoid_network
 
 volumes:
   frontend_data:
@@ -119,8 +163,8 @@ volumes:
   postgres_data:
   redis_data:
   grafana_data:
+  models_data:
 
 networks:
-  default:
-    name: cernoid_network
+  cernoid_network:
     driver: bridge 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
-import { User } from '../types/user';
-import { AppSettings } from '../types/settings';
+import { User } from '@/types';
+import { AppSettings } from '@/types/config/settings';
 
 interface AppState {
     user: User | null;

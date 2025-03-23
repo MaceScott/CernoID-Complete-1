@@ -4,8 +4,8 @@ import React from 'react';
 import { AdminDashboard } from '@/components/features/admin/AdminDashboard';
 import { Box } from '@mui/material';
 import { Metadata } from 'next';
-import { AuthGuard } from '@/components/Auth/AuthGuard';
-import { AdminGuard } from '@/components/Auth/AdminGuard';
+import AuthGuard from '@/components/Auth/AuthGuard';
+import AdminGuard from '@/components/Auth/AdminGuard';
 
 export const metadata: Metadata = {
   title: 'Admin Dashboard - CernoID Security',

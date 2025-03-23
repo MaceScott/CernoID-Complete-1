@@ -1,10 +1,11 @@
 "use client";
 
+import React from 'react';
 import { useEffect, useState } from 'react';
-import { Grid } from '@mui/material';
+import { Grid, Paper } from '@mui/material';
 import { CameraFeed } from './CameraFeed';
 import { useWebSocketContext } from '@/providers/WebSocketProvider';
-import { CameraConfig } from '@/types/shared';
+import { CameraConfig } from '@/types';
 
 interface CameraGridProps {
   cameras: CameraConfig[];
@@ -17,11 +18,11 @@ export function CameraGrid({ cameras }: CameraGridProps) {
   const { state, send } = useWebSocketContext();
 
   useEffect(() => {
-    if (state.isConnected) {
+    if (state.connected) {
       // Subscribe to camera status updates
       send({ type: 'subscribe', payload: { event: 'camera_status' } });
     }
-  }, [state.isConnected, send]);
+  }, [state.connected, send]);
 
   useEffect(() => {
     const handleCameraStatus = (event: MessageEvent) => {

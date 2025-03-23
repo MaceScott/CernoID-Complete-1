@@ -23,7 +23,7 @@ export interface RecognitionConfig {
 }
 
 export const DEFAULT_RECOGNITION_CONFIG: RecognitionConfig = {
-  minConfidence: 0.7,
+  minConfidence: 0.85,
   maxFaces: 1,
   useGpu: false,
   modelType: 'default',
@@ -36,8 +36,8 @@ export const DEFAULT_RECOGNITION_CONFIG: RecognitionConfig = {
   cacheSize: 1000,
   matcher: {
     algorithm: 'cosine',
-    threshold: 0.6,
-    maxDistance: 0.4,
+    threshold: 0.85,
+    maxDistance: 0.3,
   },
   registration: {
     maxAttempts: 3,

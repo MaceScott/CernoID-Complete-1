@@ -9,7 +9,7 @@ import {
   Tooltip,
   Grid
 } from '@mui/material';
-import { FaceDetectionResult } from '../types';
+import { FaceDetectionResult } from '@/types/recognition';
 
 interface FaceDetectionStatsProps {
   detection: FaceDetectionResult;

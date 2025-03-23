@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Box, Typography, LinearProgress, Button } from '@mui/material';
 import { RecognitionClient } from '../core/RecognitionClient';
-import { FaceDetectionResult } from '../types';
+import { FaceDetectionResult, RecognitionOptions } from '@/types/recognition';
 
 interface FaceRegistrationProps {
   onComplete: (faceData: FormData[]) => void;
@@ -28,6 +28,15 @@ export function FaceRegistration({
     }
   };
 
+  const recognitionOptions: RecognitionOptions = {
+    minConfidence: 0.8,
+    maxFaces: 1,
+    useGpu: false,
+    modelType: 'default',
+    enableLandmarks: true,
+    enableDescriptors: true
+  };
+
   return (
     <Box>
       <Typography variant="h6" gutterBottom>
@@ -49,11 +58,7 @@ export function FaceRegistration({
         onCapture={handleCapture}
         onError={onError}
         showResults={true}
-        recognitionOptions={{
-          minConfidence: 0.8,
-          enableLandmarks: true,
-          enableDescriptors: true
-        }}
+        recognitionOptions={recognitionOptions}
       />
 
       {samples.length > 0 && samples.length < requiredSamples && (

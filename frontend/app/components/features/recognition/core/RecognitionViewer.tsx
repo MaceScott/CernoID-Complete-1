@@ -10,7 +10,7 @@ import {
   styled
 } from '@mui/material';
 import { useFaceRecognition } from '@/hooks/useFaceRecognition';
-import { FaceDetectionResult, RecognitionOptions, DEFAULT_RECOGNITION_OPTIONS } from '../types';
+import { FaceDetectionResult, RecognitionOptions, DEFAULT_RECOGNITION_OPTIONS } from '@/types/recognition';
 import { ResultsViewer } from './ResultsViewer';
 
 interface RecognitionViewerProps {

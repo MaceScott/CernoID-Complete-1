@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/services/api';
-import { AppSettings } from '@/types';
+import { AppSettings } from '@/types/config/settings';
 
 interface UseSettingsReturn {
     settings: AppSettings | null;

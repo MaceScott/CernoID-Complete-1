@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Grid, Paper, useTheme, Box } from '@mui/material';
 import dynamic from 'next/dynamic';
 import { useOptimizedQuery } from '@/hooks/useOptimizedQuery';
-import { Camera } from '@/types/camera';
+import { CameraConfig } from '@/types';
 
 // Dynamically import the video stream component
 const VideoStream = dynamic(() => import('./VideoStream'), {
@@ -38,7 +38,7 @@ export default function MultiCameraGrid({
   const [visibleCameras, setVisibleCameras] = useState<Set<string>>(new Set());
 
   // Fetch cameras with optimized query hook
-  const { data: cameras, isLoading, error } = useOptimizedQuery<Camera[]>({
+  const { data: cameras, isLoading, error } = useOptimizedQuery<CameraConfig[]>({
     key: 'cameras',
     fetchFn: async () => {
       const response = await fetch('/api/cameras');

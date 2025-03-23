@@ -1,7 +1,9 @@
 "use client"
 
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
+import { Typography } from '@mui/material';
 import { RecognitionClient } from '../core/RecognitionClient';
+import { DEFAULT_RECOGNITION_CONFIG } from '../../../../types/config/recognition';
 
 interface FaceVerificationProps {
   onVerify: (faceData: FormData) => void;
@@ -29,7 +31,7 @@ export function FaceVerification({
         onError={onError}
         showResults={true}
         recognitionOptions={{
-          minConfidence: 0.85,
+          ...DEFAULT_RECOGNITION_CONFIG,
           enableLandmarks: true,
           enableDescriptors: true
         }}

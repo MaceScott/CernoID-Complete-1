@@ -30,8 +30,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useContext } from 'react';
-import { AuthContext } from '@/providers/AuthProvider';
+import { useAuthContext } from '@/providers/AuthProvider';
 import { LoginCredentials } from '@/lib/auth/types';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -65,12 +64,6 @@ import {
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
-declare global {
-  interface Window {
-    faceapi: any;
-  }
-}
-
 const MotionBox = motion(Box);
 
 /**
@@ -89,7 +82,8 @@ interface ValidationErrors {
  * Includes form validation, error handling, and loading states.
  */
 export const LoginForm = () => {
-  const { login, loginWithFace, isLoading, error, clearError } = useContext(AuthContext);
+  const auth = useAuthContext();
+  const { login, loginWithFace, isLoading, error, clearError } = auth;
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [credentials, setCredentials] = useState<LoginCredentials>({
@@ -151,9 +145,9 @@ export const LoginForm = () => {
         const modelPath = '/models';
         
         // Check if models are already loaded
-        if (window.faceapi.nets.tinyFaceDetector.isLoaded &&
-            window.faceapi.nets.faceLandmark68Net.isLoaded &&
-            window.faceapi.nets.faceRecognitionNet.isLoaded) {
+        if (window.faceapi.nets.tinyFaceDetector &&
+            window.faceapi.nets.faceLandmark68Net &&
+            window.faceapi.nets.faceRecognitionNet) {
           console.log('Models already loaded');
           setModelsLoaded(true);
           return;
@@ -162,9 +156,9 @@ export const LoginForm = () => {
         console.log('Loading face detection models...');
         
         // Load models with progress tracking
-        const loadModel = async (model: any, name: string) => {
+        const loadModel = async (model: { load: (path: string) => Promise<void> }, name: string) => {
           try {
-            await model.loadFromUri(`${modelPath}`);
+            await model.load(`${modelPath}`);
             console.log(`Loaded ${name} model`);
           } catch (error) {
             console.error(`Error loading ${name} model:`, error);
@@ -255,7 +249,7 @@ export const LoginForm = () => {
     // Check for lockout
     if (lockoutUntil && new Date() < lockoutUntil) {
       const remainingTime = Math.ceil((lockoutUntil.getTime() - new Date().getTime()) / 1000 / 60);
-      setError(`Too many login attempts. Please try again in ${remainingTime} minutes.`);
+      setCameraError(`Too many login attempts. Please try again in ${remainingTime} minutes.`);
       return;
     }
 
@@ -264,42 +258,29 @@ export const LoginForm = () => {
       return;
     }
 
-    // Validate password strength for new registrations
-    if (isRegistering) {
-      const { isValid, errors } = validatePassword(credentials.password);
-      if (!isValid) {
-        setError(errors.join('\n'));
-        return;
-      }
-    }
-
     try {
       console.log('[LoginForm] Calling login with credentials:', { email: credentials.email });
-      const result = await login(credentials);
-      console.log('[LoginForm] Login result:', result);
+      await login(credentials);
+      console.log('[LoginForm] Login successful');
       
-      if (!result.success) {
-        // Increment login attempts
-        const newAttempts = loginAttempts + 1;
-        setLoginAttempts(newAttempts);
-
-        // Check if should lockout
-        if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
-          const lockoutTime = new Date(new Date().getTime() + LOCKOUT_DURATION);
-          setLockoutUntil(lockoutTime);
-          setError(`Too many failed login attempts. Account locked for ${LOCKOUT_DURATION / 1000 / 60} minutes.`);
-        }
-
-        // Clear password on failed attempt
-        setCredentials(prev => ({ ...prev, password: '' }));
-      } else {
-        // Reset attempts on successful login
-        setLoginAttempts(0);
-        setLockoutUntil(null);
-      }
+      // Reset attempts on successful login
+      setLoginAttempts(0);
+      setLockoutUntil(null);
     } catch (err) {
       console.error('[LoginForm] Login error:', err);
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      // Increment login attempts
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
+
+      // Check if should lockout
+      if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+        const lockoutTime = new Date(new Date().getTime() + LOCKOUT_DURATION);
+        setLockoutUntil(lockoutTime);
+        setCameraError(`Too many failed login attempts. Account locked for ${LOCKOUT_DURATION / 1000 / 60} minutes.`);
+      }
+
+      // Clear password on failed attempt
+      setCredentials(prev => ({ ...prev, password: '' }));
     }
   };
 
@@ -381,7 +362,21 @@ export const LoginForm = () => {
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
               ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-              window.faceapi.draw.drawDetections(canvasRef.current, [detections]);
+              
+              // Draw the face detection box
+              ctx.strokeStyle = '#00ff00';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(
+                detections.box.x,
+                detections.box.y,
+                detections.box.width,
+                detections.box.height
+              );
+
+              // Add label
+              ctx.font = '16px Arial';
+              ctx.fillStyle = '#00ff00';
+              ctx.fillText('Face Detected', detections.box.x, detections.box.y - 5);
             }
 
             // Capture the face image
@@ -400,11 +395,7 @@ export const LoginForm = () => {
             streamRef.current = null;
 
             // Attempt face login
-            const response = await loginWithFace(imageData);
-            if (!response.success) {
-              throw new Error(response.error || 'Face login failed');
-            }
-
+            await loginWithFace(imageData);
             await handleLoginSuccess();
           } else {
             // Continue detection if no face is found

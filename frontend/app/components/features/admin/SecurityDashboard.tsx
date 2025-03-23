@@ -40,9 +40,9 @@ export function SecurityDashboard() {
     url: '/api/security/events',
     onMessage: (data) => {
       if (data.type === 'security_event') {
-        setEvents(prev => [data.event, ...prev]);
+        setEvents(prev => [data.data as SecurityEvent, ...prev]);
       } else if (data.type === 'system_metrics') {
-        setMetrics(data.metrics);
+        setMetrics(data.data as SystemMetrics);
       }
     },
   });
@@ -88,8 +88,8 @@ export function SecurityDashboard() {
                           event.severity === 'high'
                             ? 'destructive'
                             : event.severity === 'medium'
-                            ? 'warning'
-                            : 'secondary'
+                            ? 'secondary'
+                            : 'default'
                         }
                         className="absolute top-2 right-2"
                       >

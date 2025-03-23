@@ -1,119 +1,124 @@
-# Backend production stage
-FROM python:3.11-slim
+# Build stage
+FROM python:3.10-slim AS builder
 
-# Install system dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
-    libopenblas-dev \
-    liblapack-dev \
-    libx11-dev \
-    libgtk-3-dev \
-    libbz2-dev \
-    postgresql-client \
-    postgresql-server-dev-all \
-    redis-tools \
     pkg-config \
-    libx11-dev \
+    libx11-6 \
     libatlas-base-dev \
-    libgtk-3-dev \
-    libboost-python-dev \
-    python3-dev \
-    git \
-    curl \
-    wget \
-    && apt-get clean \
+    libgtk-3-0 \
+    libboost-python1.74.0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Build and install dlib from source
-RUN git clone https://github.com/davisking/dlib.git && \
-    cd dlib && \
-    python setup.py install && \
-    cd .. && \
-    rm -rf dlib
-
-# Verify redis-cli and curl are available
-RUN which redis-cli || (echo "redis-cli not found" && exit 1)
-RUN which curl || (echo "curl not found" && exit 1)
-
+# Set working directory
 WORKDIR /app
 
-# Install Python dependencies
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-    fastapi==0.104.1 \
-    uvicorn==0.24.0 \
-    python-multipart==0.0.6 \
-    numpy==1.26.2 \
-    opencv-python==4.9.0.80 \
-    torch==2.1.1 \
-    torchvision==0.16.1 \
-    redis==5.0.1 \
-    pydantic==2.5.2 \
-    pydantic-settings==2.1.0 \
-    python-jose==3.3.0 \
-    passlib==1.7.4 \
-    bcrypt==4.0.1 \
-    python-dotenv==1.0.0 \
-    alembic==1.12.1 \
+
+# Install Python dependencies with increased timeout and retries
+RUN pip install --no-cache-dir --timeout 1000 --retries 3 \
+    fastapi==0.109.2 \
+    uvicorn[standard]==0.27.1 \
+    python-multipart==0.0.9 \
+    aiohttp==3.9.3 \
+    aiofiles==23.2.1 \
+    sqlalchemy==2.0.27 \
+    alembic==1.13.1 \
     psycopg2-binary==2.9.9 \
-    sqlalchemy==2.0.23 \
     asyncpg==0.29.0 \
-    aioredis==2.0.1 \
-    PyYAML==6.0.1 \
-    GPUtil==1.4.0 \
-    cachetools==5.3.2 \
-    psutil==5.9.8 \
-    gTTS==2.5.1 \
+    aiomysql==0.2.0 \
+    python-jose[cryptography]==3.3.0 \
+    passlib[bcrypt]==1.7.4 \
+    PyJWT==2.8.0 \
     email-validator==2.1.0.post1 \
     cryptography==42.0.2 \
-    PyJWT==2.8.0
+    python-dotenv==1.0.1 \
+    pydantic==2.6.1 \
+    pydantic-settings==2.1.0 \
+    PyYAML==6.0.1 \
+    redis==5.0.1 \
+    aioredis==2.0.1 \
+    cachetools==5.3.2 \
+    tenacity==8.2.3 \
+    psutil==5.9.8 \
+    prometheus-client==0.19.0 \
+    statsd==4.0.1 \
+    gTTS==2.5.1 \
+    pytest==8.0.0 \
+    pytest-asyncio==0.23.5 \
+    pytest-cov==4.1.0 \
+    httpx==0.26.0 \
+    black==24.1.1 \
+    isort==5.13.2 \
+    flake8==7.0.0 \
+    mypy==1.8.0
 
-# Create models directory
-RUN mkdir -p models
+# Install ML dependencies separately
+RUN pip install --no-cache-dir --timeout 1000 --retries 3 \
+    dlib==19.24.0 \
+    opencv-python-headless==4.8.1.78 \
+    numpy==1.24.3 \
+    scipy==1.11.4
 
-# Create OpenCV haarcascades directory
-RUN mkdir -p /usr/local/share/opencv4/haarcascades
+# Install PyTorch dependencies separately
+RUN pip install --no-cache-dir --timeout 1000 --retries 3 \
+    torch==2.1.1 \
+    torchvision==0.16.1 \
+    face-recognition==1.3.0
 
-# Copy scripts first for model download
-COPY scripts/download_models.py scripts/
+# Runtime stage
+FROM python:3.10-slim
 
-# Run model download script
-RUN python scripts/download_models.py
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libx11-6 \
+    libatlas-base-dev \
+    libgtk-3-0 \
+    libboost-python1.74.0 \
+    curl \
+    postgresql-client \
+    redis-tools \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy migrations directory
-COPY migrations migrations/
-COPY alembic.ini .
+# Create non-root user
+RUN useradd -m -u 1000 appuser
 
-# Copy the rest of the application files
-COPY . .
+# Set working directory
+WORKDIR /app
 
-# Copy cascade file to OpenCV directory
-RUN cp models/haarcascade_frontalface_default.xml /usr/local/share/opencv4/haarcascades/
+# Copy application files from builder
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Create necessary directories with proper permissions
-RUN mkdir -p /app/data /app/logs && \
-    chmod -R 755 /app/data /app/logs
+# Create necessary directories and set permissions
+RUN mkdir -p /app/src /app/models /app/data /app/logs && \
+    chown -R appuser:appuser /app
 
+# Copy application code
+COPY src/ /app/src/
+COPY models/ /app/models/
+COPY alembic.ini /app/
+COPY healthcheck.sh /app/
+COPY entrypoint.sh /app/
+
+# Set ownership
+RUN chown -R appuser:appuser /app
+
+# Set environment variables
 ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+ENV ALEMBIC_CONFIG=/app/alembic.ini
 
-# Set default environment
-ENV ENVIRONMENT=production
+# Switch to non-root user
+USER appuser
 
-EXPOSE 8000
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD nc -z localhost 3000 || exit 1
 
-# Copy and set up entrypoint
-COPY docker-entrypoint.sh .
-RUN chmod +x docker-entrypoint.sh
-
-# Add health check script
-COPY <<'EOF' /app/health_check.sh
-#!/bin/bash
-curl -f http://localhost:8000/health || exit 1
-EOF
-RUN chmod +x /app/health_check.sh
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD /app/health_check.sh
-
-CMD ["./docker-entrypoint.sh"] 
+# Set entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"] 
