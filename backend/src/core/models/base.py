@@ -36,14 +36,16 @@ Performance:
 - Query optimization
 """
 
-from typing import Dict, List, Optional, Any, Type, TypeVar, Generic
+from typing import Dict, List, Optional, Any, Type, TypeVar, Generic, TYPE_CHECKING
 from datetime import datetime
 from bson import ObjectId
 from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
 
-from ...database import Database
-from ...utils.logging import get_logger
+from src.core.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from src.core.database import Database
 
 logger = get_logger(__name__)
 
@@ -58,7 +60,7 @@ class BaseDBModel(BaseModel):
         created_at (datetime): Creation timestamp
         updated_at (datetime): Last update timestamp
         is_active (bool): Active status flag
-        metadata (Dict[str, Any]): Additional metadata
+        meta_info (Dict[str, Any]): Additional metadata
         
     Features:
         - Automatic timestamps
@@ -79,7 +81,7 @@ class BaseDBModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     is_active: bool = True
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    meta_info: Dict[str, Any] = Field(default_factory=dict)
     
     class Config:
         """
@@ -93,13 +95,14 @@ class BaseDBModel(BaseModel):
             - Schema validation
         """
         allow_population_by_field_name = True
+        arbitrary_types_allowed = True
         json_encoders = {
             ObjectId: str,
             datetime: lambda dt: dt.isoformat()
         }
         
-    @validator("metadata")
-    def validate_metadata(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+    @validator("meta_info")
+    def validate_meta_info(cls, v: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate metadata dictionary.
         

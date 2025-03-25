@@ -6,9 +6,9 @@ from typing import List, Optional
 from sqlalchemy import Column, String, Integer, ForeignKey
 from sqlalchemy.orm import relationship
 
-from .base import BaseModel
+from ..base import Base
 
-class Zone(BaseModel):
+class Zone(Base):
     """Zone model for managing security zones."""
     
     __tablename__ = 'zones'
@@ -26,8 +26,12 @@ class Zone(BaseModel):
     access_points = relationship('AccessPoint', back_populates='zone')
 
     def to_dict(self) -> dict:
-        """Convert zone to dictionary with additional fields."""
-        data = super().to_dict()
-        data['level'] = self.level
-        data['description'] = self.description
-        return data 
+        """Convert zone to dictionary."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'level': self.level,
+            'description': self.description,
+            'created_by': self.created_by,
+            'updated_by': self.updated_by
+        } 

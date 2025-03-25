@@ -1,28 +1,36 @@
-import NextAuth, { DefaultSession } from "next-auth";
-import { Prisma } from "@prisma/client";
+import 'next-auth';
 
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      isAdmin: boolean;
-      accessLevel: number;
-      allowedZones: string[];
-    } & DefaultSession["user"];
-  }
-
+declare module 'next-auth' {
   interface User {
     id: string;
-    email: string;
+    email: string | null;
     name: string | null;
+    role: string;
     isAdmin: boolean;
     accessLevel: number;
     allowedZones: string[];
-    role: string;
     status: string;
+    createdAt: Date;
+    updatedAt: Date;
     lastLogin: Date | null;
-    lastAccess: Date | null;
-    accessHistory: Prisma.JsonValue | null;
-    preferences: Prisma.JsonValue | null;
+  }
+
+  interface Session {
+    user: {
+      id: string;
+      email?: string | null;
+      name?: string | null;
+      role: string;
+      isAdmin: boolean;
+      accessLevel: number;
+      allowedZones: string[];
+    }
+  }
+
+  interface JWT {
+    role: string;
+    isAdmin: boolean;
+    accessLevel: number;
+    allowedZones: string[];
   }
 } 

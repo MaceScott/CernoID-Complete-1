@@ -26,7 +26,7 @@ export interface LoggingMiddlewareOptions {
   onError?: (error: Error) => void;
 }
 
-export type LoggingMiddleware = (
+export type LoggingMiddlewareFunction = (
   request: NextRequest,
   options: LoggingMiddlewareOptions
 ) => Promise<Response | undefined>; 

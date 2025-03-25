@@ -6,7 +6,7 @@ export function useServices() {
     // Initialize services when component mounts
     return () => {
       // Cleanup services when component unmounts
-      serviceRegistry.shutdown();
+      void serviceRegistry.shutdown();
     };
   }, []);
 

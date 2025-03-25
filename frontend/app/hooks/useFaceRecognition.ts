@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FaceRecognitionService } from '@/lib/services/face-recognition';
+import { faceRecognitionService } from '@/services/faceRecognitionService';
 import { FaceDetectionResult, RecognitionOptions } from '@/types/recognition';
 
 interface UseFaceRecognitionOptions {
@@ -34,7 +34,6 @@ export function useFaceRecognition({
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const faceRecognitionService = FaceRecognitionService.getInstance();
 
   const handleError = useCallback((err: Error) => {
     setError(err.message);
@@ -99,9 +98,9 @@ export function useFaceRecognition({
     const detectFace = async () => {
       try {
         const detection = await faceRecognitionService.detectFace(videoRef.current!, {
-          minConfidence: 0.7,
-          enableLandmarks: true,
-          enableDescriptors: true,
+          confidenceThreshold: 0.7,
+          detectLandmarks: true,
+          extractDescriptor: true,
           ...recognitionOptions
         });
 
@@ -116,7 +115,7 @@ export function useFaceRecognition({
             );
 
             const formData = new FormData();
-            formData.append('face', faceBlob, 'face.jpg');
+            formData.append('face', faceBlob as Blob, 'face.jpg');
             onCapture(formData);
             stopRecognition();
           }

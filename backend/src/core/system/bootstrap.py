@@ -7,11 +7,14 @@ from core.services.manager import ServiceManager
 from core.database.session import DatabaseSession
 from core.events.event_bus import EventBus
 from core.monitoring.metrics import MetricsCollector
+from core.config import settings
 
 class SystemBootstrap:
     """System bootstrap and initialization manager"""
     
     def __init__(self, config_path: Optional[Path] = None):
+        if config_path is None:
+            config_path = Path("/app/config/config.yaml")
         self.config_manager = ConfigManager(config_path)
         self.logger = self._setup_logger()
         self._initialized = False
@@ -49,12 +52,12 @@ class SystemBootstrap:
     async def _init_database(self, config: Dict) -> None:
         """Initialize database connection and run migrations"""
         try:
-            db_session = DatabaseSession(config['database']['url'])
+            db_session = DatabaseSession(settings.DATABASE_URL)
             await db_session.create_all()
             
             # Run migrations
             from core.database.migrations.manager import MigrationManager
-            migration_manager = MigrationManager(Path(config['database']['migrations_dir']))
+            migration_manager = MigrationManager(Path("/app/migrations"))
             await migration_manager.run_migrations()
             
             self._components['database'] = db_session
@@ -79,8 +82,8 @@ class SystemBootstrap:
     async def _init_services(self, config: Dict) -> None:
         """Initialize service manager and services"""
         try:
-            service_manager = ServiceManager(config)
-            await service_manager.initialize_all()
+            service_manager = ServiceManager(self.config_manager)
+            await service_manager.initialize()
             self._components['services'] = service_manager
             self.logger.info("Services initialization completed")
             
@@ -91,8 +94,8 @@ class SystemBootstrap:
     async def _init_monitoring(self, config: Dict) -> None:
         """Initialize monitoring system"""
         try:
-            metrics_collector = MetricsCollector()
-            await metrics_collector.start()
+            metrics_collector = MetricsCollector(config)
+            await metrics_collector.initialize()
             self._components['monitoring'] = metrics_collector
             self.logger.info("Monitoring system initialization completed")
             

@@ -168,7 +168,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(true);
       clearError();
 
-      await apiClient.post('/api/auth/logout');
+      await apiClient.post('/api/auth/logout', {});
     } finally {
       setUser(null);
       await handleNavigation(false);

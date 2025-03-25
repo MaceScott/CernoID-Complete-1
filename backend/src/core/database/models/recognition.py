@@ -6,9 +6,9 @@ from typing import Optional
 from sqlalchemy import Column, String, DateTime, Float, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 
-from .base import BaseModel
+from ..base import Base
 
-class Recognition(BaseModel):
+class Recognition(Base):
     """Recognition model for tracking face recognition events."""
     
     __tablename__ = 'recognitions'
@@ -18,7 +18,7 @@ class Recognition(BaseModel):
     camera_id = Column(String, ForeignKey('cameras.id'), nullable=False)
     timestamp = Column(DateTime, nullable=False)
     confidence = Column(Float, nullable=False)
-    metadata = Column(JSON)
+    meta_info = Column(JSON)
     
     # Relationships
     user = relationship('User', back_populates='recognitions')
@@ -26,7 +26,12 @@ class Recognition(BaseModel):
 
     def to_dict(self) -> dict:
         """Convert recognition to dictionary with additional fields."""
-        data = super().to_dict()
-        data['confidence'] = self.confidence
-        data['metadata'] = self.metadata
+        data = {
+            'id': self.id,
+            'user_id': self.user_id,
+            'camera_id': self.camera_id,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'confidence': self.confidence,
+            'meta_info': self.meta_info
+        }
         return data 

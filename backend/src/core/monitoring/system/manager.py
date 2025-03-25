@@ -68,7 +68,7 @@ class SystemHealth:
     error_count: Dict[str, int]
     performance_score: float
 
-class SystemMonitor(BaseComponent):
+class SystemManager(BaseComponent):
     """System monitoring and health checking"""
     
     def __init__(self, config: dict):

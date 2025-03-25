@@ -17,7 +17,7 @@ export interface AuthMiddlewareOptions {
   onError?: (error: Error) => void;
 }
 
-export type AuthMiddleware = (
+export type AuthMiddlewareFunction = (
   request: NextRequest,
   options: AuthMiddlewareOptions
 ) => Promise<Response | undefined>; 

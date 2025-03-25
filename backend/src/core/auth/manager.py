@@ -1,25 +1,48 @@
 """
 Authentication manager for handling user authentication and authorization.
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
+import logging
 
 from core.config import Settings
 from core.database.models.models import User
 from .schemas import TokenData
+from .service import AuthService
 
 settings = Settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+logger = logging.getLogger(__name__)
+
+# OAuth2 scheme for token authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+class User(BaseModel):
+    """User model."""
+    id: int
+    username: str
+    role: str
+
 class AuthManager:
-    """Handles user authentication and authorization."""
-    
+    """Authentication manager."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        """Initialize auth manager."""
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
+            self._auth_service = AuthService()
         self.secret_key = settings.SECRET_KEY
         self.algorithm = settings.ALGORITHM
         self.access_token_expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
@@ -56,30 +79,41 @@ class AuthManager:
             return None
         return user
             
-    async def get_current_user(self, token: str, db: AsyncSession) -> Optional[User]:
+    async def get_current_user(self, token: str = Depends(oauth2_scheme)) -> User:
         """Get current user from token."""
         try:
-            payload = await self.verify_token(token)
-            user_id = payload.get("sub")
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Could not validate credentials",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            # Get user from database
-            user = await db.get(User, int(user_id))
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            return user
+            token_data = await self._auth_service.verify_token(token)
+            return User(
+                id=token_data.user_id,
+                username=token_data.username,
+                role=token_data.role
+            )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to get current user: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) 
+                detail="Could not validate credentials"
+            )
+
+    async def check_permissions(self, user: User, required_role: str) -> bool:
+        """Check if user has required role."""
+        try:
+            # Admin has all permissions
+            if user.role == "admin":
+                return True
+            
+            # Check specific role
+            return user.role == required_role
+        except Exception as e:
+            logger.error(f"Permission check failed: {e}")
+            return False
+
+# Create singleton instance
+auth_manager = AuthManager()
+
+# Dependency for getting current user
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+    """Get current user dependency."""
+    return await auth_manager.get_current_user(token) 

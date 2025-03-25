@@ -1,10 +1,10 @@
 export interface RecognitionConfig {
-  minConfidence: number;
+  confidenceThreshold: number;
   maxFaces: number;
   useGpu: boolean;
   modelType: string;
-  enableLandmarks: boolean;
-  enableDescriptors: boolean;
+  detectLandmarks: boolean;
+  extractDescriptor: boolean;
   processingTimeout: number;
   maxImageSize: number;
   supportedFormats: string[];
@@ -23,12 +23,12 @@ export interface RecognitionConfig {
 }
 
 export const DEFAULT_RECOGNITION_CONFIG: RecognitionConfig = {
-  minConfidence: 0.85,
+  confidenceThreshold: 0.85,
   maxFaces: 1,
   useGpu: false,
   modelType: 'default',
-  enableLandmarks: true,
-  enableDescriptors: true,
+  detectLandmarks: true,
+  extractDescriptor: true,
   processingTimeout: 5000,
   maxImageSize: 1920 * 1080,
   supportedFormats: ['jpeg', 'png', 'webp'],

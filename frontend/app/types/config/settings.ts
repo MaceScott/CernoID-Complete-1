@@ -21,12 +21,12 @@ export interface AppSettings {
     showThumbnails: boolean;
   };
   recognition: {
-    minConfidence: number;
+    confidenceThreshold: number;
     maxFaces: number;
     useGpu: boolean;
     modelType: string;
-    enableLandmarks: boolean;
-    enableDescriptors: boolean;
+    detectLandmarks: boolean;
+    extractDescriptor: boolean;
   };
   camera: {
     defaultDevice: string;
@@ -65,12 +65,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showThumbnails: true,
   },
   recognition: {
-    minConfidence: 0.7,
+    confidenceThreshold: 0.7,
     maxFaces: 1,
     useGpu: false,
     modelType: 'default',
-    enableLandmarks: true,
-    enableDescriptors: true,
+    detectLandmarks: true,
+    extractDescriptor: true,
   },
   camera: {
     defaultDevice: '',

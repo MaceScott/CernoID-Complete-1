@@ -1,8 +1,73 @@
 from typing import Dict, Optional, Any, List
 import asyncio
+import psutil
 from datetime import datetime
 from collections import defaultdict
 from ...base import BaseComponent
+from ..utils.errors import handle_errors, MetricsError
+
+class MemoryMetrics(BaseComponent):
+    """Memory metrics collector"""
+    
+    def __init__(self, config: dict):
+        super().__init__(config)
+        self._interval = self.config.get('metrics.memory.interval', 60)
+        self._stats = {
+            'collections': 0,
+            'errors': 0
+        }
+
+    async def initialize(self) -> None:
+        """Initialize memory metrics collector"""
+        pass
+
+    async def cleanup(self) -> None:
+        """Cleanup collector resources"""
+        pass
+
+    @handle_errors()
+    async def collect(self) -> Dict[str, Any]:
+        """Collect memory metrics"""
+        try:
+            # Get memory info
+            memory = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            
+            metrics = {
+                'memory': {
+                    'total': memory.total,
+                    'available': memory.available,
+                    'used': memory.used,
+                    'free': memory.free,
+                    'percent': memory.percent,
+                    'active': getattr(memory, 'active', None),
+                    'inactive': getattr(memory, 'inactive', None),
+                    'buffers': getattr(memory, 'buffers', None),
+                    'cached': getattr(memory, 'cached', None),
+                    'shared': getattr(memory, 'shared', None)
+                },
+                'swap': {
+                    'total': swap.total,
+                    'used': swap.used,
+                    'free': swap.free,
+                    'percent': swap.percent,
+                    'sin': getattr(swap, 'sin', None),
+                    'sout': getattr(swap, 'sout', None)
+                }
+            }
+            
+            # Update stats
+            self._stats['collections'] += 1
+            
+            return metrics
+            
+        except Exception as e:
+            self._stats['errors'] += 1
+            raise MetricsError(f"Memory metrics collection failed: {str(e)}")
+
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get collector statistics"""
+        return self._stats.copy()
 
 class MemoryBackend(BaseComponent):
     """In-memory metrics backend"""

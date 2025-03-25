@@ -1,4 +1,5 @@
 import { BaseEntity } from '../shared';
+import { Session } from 'next-auth';
 
 // User types
 export interface User extends BaseEntity {
@@ -102,8 +103,5 @@ export interface AuthState {
   error: string | null;
 }
 
-// NextAuth types
-export interface Session {
-  user: User;
-  expires: string;
-} 
+// Re-export Session type
+export type { Session }; 

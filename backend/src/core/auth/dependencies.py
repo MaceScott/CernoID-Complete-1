@@ -1,4 +1,5 @@
 """Authentication dependencies."""
+from typing import List
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -29,4 +30,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     user = await User.get_by_username(token_data.username)
     if user is None:
         raise credentials_exception
-    return user 
+    return user
+
+def require_permissions(user: User, required_permissions: str) -> None:
+    """
+    Check if user has required permissions.
+    
+    Args:
+        user: User to check permissions for
+        required_permissions: Required permission string
+        
+    Raises:
+        HTTPException: If user doesn't have required permissions
+    """
+    if not user.has_permission(required_permissions):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        ) 

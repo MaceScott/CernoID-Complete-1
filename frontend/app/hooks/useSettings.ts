@@ -19,13 +19,13 @@ const defaultSettings: AppSettings = {
         desktop: true
     },
     security: {
-        token_expiry: 30,
-        max_attempts: 3,
-        lockout_duration: 15,
-        require_2fa: false,
-        require_facial_recognition: true,
-        require_password: true,
-        allowed_admin_roles: ['admin', 'security']
+        tokenExpiry: 30,
+        maxAttempts: 3,
+        lockoutDuration: 15,
+        require2fa: false,
+        requireFacialRecognition: true,
+        requirePassword: true,
+        allowedAdminRoles: ['admin', 'security']
     },
     display: {
         density: 'comfortable',
@@ -33,12 +33,21 @@ const defaultSettings: AppSettings = {
         showThumbnails: true
     },
     recognition: {
-        min_confidence: 0.5,
-        max_faces: 10,
-        use_gpu: true,
-        model_type: 'default'
+        confidenceThreshold: 0.5,
+        maxFaces: 10,
+        useGpu: true,
+        modelType: 'default',
+        detectLandmarks: true,
+        extractDescriptor: true
+    },
+    camera: {
+        defaultDevice: '',
+        resolution: '1280x720',
+        fps: 30,
+        quality: 80
     },
     system: {
+        autoStart: false,
         autoUpdate: true,
         logLevel: 'info',
         retentionDays: 30

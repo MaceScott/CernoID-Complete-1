@@ -68,12 +68,11 @@ export function FaceVerification({ onSuccess, onError }: FaceVerificationProps) 
             description="Please look directly at the camera and ensure good lighting for verification."
             onCapture={handleCapture}
             onError={onError}
-            showResults={false}
-            showControls={true}
+            showResults={true}
             recognitionOptions={{
-              minConfidence: 0.8,
-              enableLandmarks: true,
-              enableDescriptors: true
+              confidenceThreshold: 0.8,
+              detectLandmarks: true,
+              extractDescriptor: true
             }}
           />
 

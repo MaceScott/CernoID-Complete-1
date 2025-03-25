@@ -43,11 +43,11 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
 from pydantic import BaseModel, Field
 
-from ...core.recognition import FaceRecognition
-from ...core.models import Face, Person
-from ...database import get_db
-from ...utils.auth import get_current_user, require_permissions
-from ...utils.logging import get_logger
+from core.face_recognition.core import FaceRecognitionSystem
+from core.database.models import Recognition, User
+from core.database import get_db
+from core.auth.dependencies import get_current_user, require_permissions
+from core.logging.base import get_logger
 
 logger = get_logger(__name__)
 
@@ -151,7 +151,7 @@ async def recognize_faces(
         require_permissions(current_user, "recognition.detect")
         
         # Process image
-        recognition = FaceRecognition()
+        recognition = FaceRecognitionSystem()
         results = await recognition.recognize_faces(
             request.image_data,
             max_faces=request.max_faces,
@@ -161,9 +161,9 @@ async def recognize_faces(
         # Update recognition stats
         for result in results["faces"]:
             if result.get("person_id"):
-                face = await Face.get_by_id(db, result["person_id"])
-                if face:
-                    await face.update_recognition(
+                recognition = await Recognition.get_by_id(db, result["person_id"])
+                if recognition:
+                    await recognition.update_recognition(
                         db,
                         confidence=result["confidence"]
                     )
@@ -229,7 +229,7 @@ async def detect_faces(
         require_permissions(current_user, "recognition.detect")
         
         # Process image
-        recognition = FaceRecognition()
+        recognition = FaceRecognitionSystem()
         results = await recognition.detect_faces(
             request.image_data,
             max_faces=request.max_faces,
@@ -296,7 +296,7 @@ async def encode_face(
         require_permissions(current_user, "recognition.encode")
         
         # Process image
-        recognition = FaceRecognition()
+        recognition = FaceRecognitionSystem()
         results = await recognition.encode_faces(
             request.image_data,
             max_faces=request.max_faces,
@@ -366,7 +366,7 @@ async def match_faces(
         require_permissions(current_user, "recognition.match")
         
         # Process image
-        recognition = FaceRecognition()
+        recognition = FaceRecognitionSystem()
         results = await recognition.match_faces(
             request.image_data,
             max_faces=request.max_faces,
@@ -376,9 +376,9 @@ async def match_faces(
         # Update recognition stats
         for match in results["matches"]:
             if match.get("person_id"):
-                face = await Face.get_by_id(db, match["person_id"])
-                if face:
-                    await face.update_recognition(
+                recognition = await Recognition.get_by_id(db, match["person_id"])
+                if recognition:
+                    await recognition.update_recognition(
                         db,
                         confidence=match["confidence"]
                     )
@@ -442,15 +442,15 @@ async def verify_face(
         require_permissions(current_user, "recognition.verify")
         
         # Get person
-        person = await Person.get_by_id(db, person_id)
-        if not person:
+        user = await User.get_by_id(db, person_id)
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Person not found"
             )
             
         # Process image
-        recognition = FaceRecognition()
+        recognition = FaceRecognitionSystem()
         result = await recognition.verify_face(
             request.image_data,
             person_id,
@@ -459,9 +459,9 @@ async def verify_face(
         
         # Update recognition stats
         if result["verified"]:
-            face = await Face.get_by_id(db, person_id)
-            if face:
-                await face.update_recognition(
+            recognition = await Recognition.get_by_id(db, person_id)
+            if recognition:
+                await recognition.update_recognition(
                     db,
                     confidence=result["confidence"]
                 )

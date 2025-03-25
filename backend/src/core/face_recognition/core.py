@@ -57,23 +57,19 @@ import os
 import json
 import urllib.request
 
-from src.core.events.manager import event_manager
-from src.core.error_handling import handle_exceptions
-from src.core.config import settings
-from src.core.database import db_pool
-from src.core.utils.decorators import measure_performance
-from src.core.monitoring.service import monitoring_service
+from ..utils.errors import handle_errors
+from ..config import settings
 from gtts import gTTS
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..monitoring.decorators import measure_performance
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Model paths and URLs
-CASCADE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'haarcascade_frontalface_default.xml')
-DLIB_FACE_RECOGNITION_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'data', 'dlib_face_recognition_resnet_model_v1.dat')
-DLIB_SHAPE_PREDICTOR_PATH = os.path.join(os.path.dirname(__file__), 'data', 'shape_predictor_68_face_landmarks.dat')
+CASCADE_PATH = "/app/models/haarcascade_frontalface_default.xml"
+DLIB_FACE_RECOGNITION_MODEL_PATH = "/app/models/dlib_face_recognition_resnet_model_v1.dat"
+DLIB_SHAPE_PREDICTOR_PATH = "/app/models/shape_predictor_68_face_landmarks.dat"
 
 # Model download URLs
 DLIB_FACE_RECOGNITION_MODEL_URL = "https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2"
@@ -150,90 +146,29 @@ class FaceRecognitionSystem(BaseComponent):
     - Caching
     """
     
-    def __init__(self, config: Dict[str, Any], database_url: str):
-        """
-        Initialize face recognition system.
-        Sets up configuration, services, and GPU settings.
-        """
-        super().__init__(config)
-        self.database = FaceDatabase(database_url)
-        self._encoding_cache = TTLCache(
-            maxsize=self.config.FACE_RECOGNITION_CACHE_SIZE,
-            ttl=self.config.FACE_RECOGNITION_CACHE_TTL
-        )
-        self.is_initialized = False
-        self._initializing = False
-        
-        # GPU configuration
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Using device: {self.device}")
-
-    @handle_errors
-    async def initialize(self) -> None:
-        """
-        Initialize the face recognition system.
-        
-        Steps:
-        1. Create data directory
-        2. Download and prepare models
-        3. Initialize components (detector, encoder, landmark detector)
-        4. Set up caching and performance settings
-        5. Initialize monitoring and statistics
-        
-        Raises:
-            Exception: If initialization fails
-        """
-        if self.is_initialized:
-            logger.info("Face recognition system already initialized")
-            return
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        if not hasattr(self, '_initialized_base'):
+            super().__init__()
+            self._initialized_base = True
             
-        if self._initializing:
-            logger.info("Face recognition system initialization already in progress")
-            return
+            # Initialize basic attributes
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.logger.info(f"Using device: {self.device}")
             
-        self._initializing = True
-        
-        try:
-            # Create data directory if it doesn't exist
-            data_dir = os.path.join(os.path.dirname(__file__), 'data')
-            os.makedirs(data_dir, exist_ok=True)
+            # Initialize caches
+            self._encoding_cache = None
+            self._detector = None
+            self._encoder = None
+            self._landmark_detector = None
             
-            # Download and prepare models
-            await self._download_and_prepare_models()
-            
-            # Initialize components
-            self._detector = await self._init_detector()
-            self._encoder = await self._init_encoder()
-            self._landmark_detector = await self._init_landmark_detector()
-            
-            # Batch size for CPU
-            self._batch_size = 4
-                
-            # Optimize processing settings
-            self._face_size = self.config.RECOGNITION_FACE_SIZE
-            self._min_quality = self.config.RECOGNITION_MIN_QUALITY
-            
-            # Cache settings
-            self.matching_threshold = self.config.FACE_RECOGNITION_MATCHING_THRESHOLD
-            
-            # Performance settings
-            self._min_face_size = self.config.FACE_RECOGNITION_MIN_FACE_SIZE
-            self._scale_factor = self.config.FACE_RECOGNITION_SCALE_FACTOR
-            
-            # Feature extraction settings
-            self._normalize = transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
-            )
-            
-            # Processing state
-            self._processing_queue = asyncio.Queue(maxsize=100)
-            self._batch_lock = asyncio.Lock()
-            
-            # Initialize monitoring
-            self.monitoring = monitoring_service
-            
-            # Statistics
+            # Initialize statistics
             self._stats = {
                 'total_processed': 0,
                 'average_inference_time': 0.0,
@@ -246,46 +181,75 @@ class FaceRecognitionSystem(BaseComponent):
                 'average_quality': 0.0,
                 'processing_time': 0.0
             }
+
+    async def _do_initialize(self) -> None:
+        """Initialize the face recognition system."""
+        try:
+            # Import dependencies here to avoid circular imports
+            from ..config import settings
+            from ..database import db_pool
+            from ..events.manager import event_manager
+            from ..monitoring.service import monitoring_service
             
-            # Distance detection settings
-            self._focal_length = self.config.RECOGNITION_FOCAL_LENGTH
-            self._avg_face_width = self.config.RECOGNITION_AVG_FACE_WIDTH
-            self._activation_range = self.config.RECOGNITION_ACTIVATION_RANGE
-            self._long_range_threshold = self.config.RECOGNITION_LONG_RANGE_THRESHOLD
+            # Store required services
+            self.db_pool = db_pool
+            self.event_manager = event_manager
+            self.monitoring = monitoring_service
             
-            # Initialize face recognition model
-            self.model = await self._load_model()
+            # Update config with actual settings
+            self.update_config(settings.dict())
             
-            self.is_initialized = True
-            logger.info("Face recognition system initialized successfully")
+            # Initialize encoding cache
+            self._encoding_cache = TTLCache(
+                maxsize=self.get_config('FACE_RECOGNITION_CACHE_SIZE', 1000),
+                ttl=self.get_config('FACE_RECOGNITION_CACHE_TTL', 3600)
+            )
+            
+            # Create models directory if it doesn't exist
+            models_dir = "/app/models"
+            os.makedirs(models_dir, exist_ok=True)
+            
+            # Download and prepare models
+            await self._download_and_prepare_models()
+            
+            # Initialize components
+            self._detector = await self._init_detector()
+            self._encoder = await self._init_encoder()
+            self._landmark_detector = await self._init_landmark_detector()
+            
+            # Initialize settings from config
+            self._batch_size = 4
+            self._face_size = self.get_config('RECOGNITION_FACE_SIZE', 224)
+            self._min_quality = self.get_config('RECOGNITION_MIN_QUALITY', 0.5)
+            self.matching_threshold = self.get_config('FACE_RECOGNITION_MATCHING_THRESHOLD', 0.6)
+            self._min_face_size = self.get_config('FACE_RECOGNITION_MIN_FACE_SIZE', 20)
+            self._scale_factor = self.get_config('FACE_RECOGNITION_SCALE_FACTOR', 1.1)
+            
+            # Initialize transform
+            self._normalize = transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+            
+            # Initialize processing queue
+            self._processing_queue = asyncio.Queue(maxsize=100)
+            self._batch_lock = asyncio.Lock()
+            
+            # Initialize distance settings
+            self._focal_length = self.get_config('RECOGNITION_FOCAL_LENGTH', 500.0)
+            self._avg_face_width = self.get_config('RECOGNITION_AVG_FACE_WIDTH', 0.15)
+            self._activation_range = self.get_config('RECOGNITION_ACTIVATION_RANGE', 2.0)
+            self._long_range_threshold = self.get_config('RECOGNITION_LONG_RANGE_THRESHOLD', 5.0)
             
         except Exception as e:
-            logger.error(f"Failed to initialize face recognition system: {e}")
+            self.logger.error(f"Failed to initialize face recognition system: {e}")
             raise
-        finally:
-            self._initializing = False
 
-    @handle_errors
-    async def cleanup(self) -> None:
-        """
-        Cleanup face recognition system resources.
-        
-        Steps:
-        1. Clear caches
-        2. Clear processing queue
-        3. Release GPU memory
-        4. Reset initialization state
-        
-        Raises:
-            Exception: If cleanup fails
-        """
-        if not self.is_initialized:
-            logger.info("Face recognition system not initialized, nothing to clean up")
-            return
-            
+    async def _do_cleanup(self) -> None:
+        """Clean up face recognition system resources."""
         try:
             # Clear caches
-            if hasattr(self, '_encoding_cache'):
+            if self._encoding_cache is not None:
                 self._encoding_cache.clear()
             
             # Clear processing queue
@@ -300,11 +264,8 @@ class FaceRecognitionSystem(BaseComponent):
             if self.device == "cuda":
                 torch.cuda.empty_cache()
             
-            self.is_initialized = False
-            logger.info("Face recognition system cleaned up successfully")
-            
         except Exception as e:
-            logger.error(f"Error cleaning up face recognition system: {e}")
+            self.logger.error(f"Error cleaning up face recognition system: {e}")
             raise
 
     async def _download_and_prepare_models(self):
@@ -320,11 +281,15 @@ class FaceRecognitionSystem(BaseComponent):
             Exception: If model download or preparation fails
         """
         try:
+            # Create models directory if it doesn't exist
+            models_dir = "/app/models"
+            os.makedirs(models_dir, exist_ok=True)
+            
             # Download cascade classifier if it doesn't exist
             if not os.path.exists(CASCADE_PATH):
                 url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
                 urllib.request.urlretrieve(url, CASCADE_PATH)
-                logger.info(f"Downloaded cascade classifier to {CASCADE_PATH}")
+                self.logger.info(f"Downloaded cascade classifier to {CASCADE_PATH}")
             
             # Download and extract dlib face recognition model if it doesn't exist
             if not os.path.exists(DLIB_FACE_RECOGNITION_MODEL_PATH):
@@ -341,7 +306,7 @@ class FaceRecognitionSystem(BaseComponent):
                 
                 # Remove compressed file
                 os.remove(compressed_path)
-                logger.info(f"Downloaded and extracted face recognition model to {DLIB_FACE_RECOGNITION_MODEL_PATH}")
+                self.logger.info(f"Downloaded and extracted face recognition model to {DLIB_FACE_RECOGNITION_MODEL_PATH}")
             
             # Download and extract shape predictor model if it doesn't exist
             if not os.path.exists(DLIB_SHAPE_PREDICTOR_PATH):
@@ -358,10 +323,10 @@ class FaceRecognitionSystem(BaseComponent):
                 
                 # Remove compressed file
                 os.remove(compressed_path)
-                logger.info(f"Downloaded and extracted shape predictor model to {DLIB_SHAPE_PREDICTOR_PATH}")
+                self.logger.info(f"Downloaded and extracted shape predictor model to {DLIB_SHAPE_PREDICTOR_PATH}")
                 
         except Exception as e:
-            logger.error(f"Error downloading models: {e}")
+            self.logger.error(f"Error downloading models: {e}")
             raise
 
     async def _init_detector(self) -> cv2.CascadeClassifier:
@@ -377,7 +342,7 @@ class FaceRecognitionSystem(BaseComponent):
                 raise ValueError(f"Failed to load cascade classifier from {CASCADE_PATH}")
             return detector
         except Exception as e:
-            logger.error(f"Error initializing face detector: {e}")
+            self.logger.error(f"Error initializing face detector: {e}")
             raise
 
     async def _init_encoder(self) -> 'dlib.face_recognition_model_v1':
@@ -390,7 +355,7 @@ class FaceRecognitionSystem(BaseComponent):
         try:
             return dlib.face_recognition_model_v1(DLIB_FACE_RECOGNITION_MODEL_PATH)
         except Exception as e:
-            logger.error(f"Error initializing face encoder: {e}")
+            self.logger.error(f"Error initializing face encoder: {e}")
             raise
 
     async def _init_landmark_detector(self) -> 'dlib.shape_predictor':
@@ -403,7 +368,7 @@ class FaceRecognitionSystem(BaseComponent):
         try:
             return dlib.shape_predictor(DLIB_SHAPE_PREDICTOR_PATH)
         except Exception as e:
-            logger.error(f"Failed to load landmark model: {str(e)}")
+            self.logger.error(f"Failed to load landmark model: {str(e)}")
             raise
 
     async def _load_model(self):
@@ -460,7 +425,7 @@ class FaceRecognitionSystem(BaseComponent):
             }
             
         except Exception as e:
-            logger.error(f"Error processing image: {e}")
+            self.logger.error(f"Error processing image: {e}")
             raise
 
     async def process_face(self, face_img: np.ndarray) -> Optional[FaceFeatures]:
@@ -514,7 +479,7 @@ class FaceRecognitionSystem(BaseComponent):
             return features
             
         except Exception as e:
-            logger.error(f"Face processing failed: {str(e)}")
+            self.logger.error(f"Face processing failed: {str(e)}")
             return None
 
     def _decode_image(self, image_data: str) -> np.ndarray:
@@ -545,7 +510,7 @@ class FaceRecognitionSystem(BaseComponent):
             return image
             
         except Exception as e:
-            logger.error(f"Image decoding failed: {str(e)}")
+            self.logger.error(f"Image decoding failed: {str(e)}")
             raise
 
     @handle_errors
@@ -615,7 +580,7 @@ class FaceRecognitionSystem(BaseComponent):
             return embedding
             
         except Exception as e:
-            logger.error(f"Face encoding failed: {str(e)}")
+            self.logger.error(f"Face encoding failed: {str(e)}")
             raise
 
     @handle_errors
@@ -662,7 +627,7 @@ class FaceRecognitionSystem(BaseComponent):
             }
             
         except Exception as e:
-            logger.error(f"Face verification failed: {e}")
+            self.logger.error(f"Face verification failed: {e}")
             return None
 
     @handle_errors
@@ -704,7 +669,7 @@ class FaceRecognitionSystem(BaseComponent):
             return success
             
         except Exception as e:
-            logger.error(f"Face registration failed: {e}")
+            self.logger.error(f"Face registration failed: {e}")
             return False
 
     def _compare_encodings(self, encoding1: np.ndarray, encoding2: np.ndarray) -> float:
@@ -735,7 +700,7 @@ class FaceRecognitionSystem(BaseComponent):
             return float(probability)
             
         except Exception as e:
-            logger.error(f"Encoding comparison failed: {str(e)}")
+            self.logger.error(f"Encoding comparison failed: {str(e)}")
             return 0.0
 
     def _preprocess_face(self, face_img: np.ndarray) -> Optional[torch.Tensor]:
@@ -771,7 +736,7 @@ class FaceRecognitionSystem(BaseComponent):
             return face_tensor.to(self.device)
             
         except Exception as e:
-            logger.error(f"Face preprocessing failed: {str(e)}")
+            self.logger.error(f"Face preprocessing failed: {str(e)}")
             return None
 
     async def _estimate_pose(self, landmarks: np.ndarray) -> Tuple[float, float, float]:
@@ -808,7 +773,7 @@ class FaceRecognitionSystem(BaseComponent):
             return tuple(euler_angles.flatten())
             
         except Exception as e:
-            logger.error(f"Pose estimation failed: {str(e)}")
+            self.logger.error(f"Pose estimation failed: {str(e)}")
             return (0.0, 0.0, 0.0)
 
     def _get_3d_model_points(self) -> np.ndarray:
@@ -886,7 +851,7 @@ class FaceRecognitionSystem(BaseComponent):
             return float(np.clip(quality_score, 0.0, 1.0))
             
         except Exception as e:
-            logger.error(f"Quality analysis failed: {str(e)}")
+            self.logger.error(f"Quality analysis failed: {str(e)}")
             return 0.0
 
     async def _analyze_attributes(self, face_tensor: torch.Tensor) -> Dict:
@@ -899,67 +864,12 @@ class FaceRecognitionSystem(BaseComponent):
         Returns:
             Dict: Analyzed attributes
         """
-        try:
-            with torch.no_grad():
-                attributes = self._attribute_analyzer(face_tensor)
-            
-            # Process attributes
-            results = {
-                'expression': self._get_expression(attributes),
-                'age': self._estimate_age(attributes),
-                'gender': self._detect_gender(attributes)
-            }
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Attribute analysis failed: {str(e)}")
-            return {}
-
-    def _get_expression(self, attributes: torch.Tensor) -> str:
-        """
-        Get facial expression from attributes.
-        
-        Args:
-            attributes: Face attributes tensor
-            
-        Returns:
-            str: Detected expression
-        """
-        expressions = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'fearful', 'disgusted']
-        idx = torch.argmax(attributes[:7]).item()
-        return expressions[idx]
-
-    def _estimate_age(self, attributes: torch.Tensor) -> Optional[float]:
-        """
-        Estimate age from face attributes.
-        
-        Args:
-            attributes: Face attributes tensor
-            
-        Returns:
-            Optional[float]: Estimated age
-        """
-        try:
-            age = attributes[7].item() * 100  # Scale to years
-            return float(np.clip(age, 0, 100))
-        except:
-            return None
-
-    def _detect_gender(self, attributes: torch.Tensor) -> Optional[str]:
-        """
-        Detect gender from face attributes.
-        
-        Args:
-            attributes: Face attributes tensor
-            
-        Returns:
-            Optional[str]: Detected gender
-        """
-        try:
-            return 'male' if attributes[8].item() > 0.5 else 'female'
-        except:
-            return None
+        # For now, return default values since we don't have the attribute analyzer model
+        return {
+            'expression': 'neutral',
+            'age': None,
+            'gender': None
+        }
 
     def _update_stats(self, quality: float) -> None:
         """
@@ -1031,7 +941,7 @@ class FaceRecognitionSystem(BaseComponent):
                     # Clear cache and retry with smaller batch
                     torch.cuda.empty_cache()
                     self._batch_size = max(1, self._batch_size // 2)
-                    logger.warning(f"Reduced batch size to {self._batch_size} due to OOM")
+                    self.logger.warning(f"Reduced batch size to {self._batch_size} due to OOM")
                     return await self.encode_faces(detections)
                 raise
         
@@ -1103,7 +1013,7 @@ class FaceRecognitionSystem(BaseComponent):
             with open(tts_config_path, 'r') as file:
                 self.tts_responses = json.load(file)
         except Exception as e:
-            logger.error(f"Error loading TTS responses: {e}")
+            self.logger.error(f"Error loading TTS responses: {e}")
 
 def play_response(event):
     """Play audio response for an event."""
@@ -1118,5 +1028,5 @@ def play_response(event):
         tts.save('response.mp3')
         os.system('mpg123 response.mp3')
 
-# Global face recognition system instance
+# Create singleton instance
 face_recognition_system = FaceRecognitionSystem() 

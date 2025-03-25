@@ -49,22 +49,26 @@ export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
  * 
  * @property {string} id - Unique user identifier
  * @property {string} email - User's email address
+ * @property {string} name - User's full name
  * @property {string} username - User's username
  * @property {string} role - User's role in the system
  * @property {string[]} permissions - List of user permissions
  * @property {boolean} isActive - Whether the user is active
  * @property {Date | undefined} lastLogin - Last login date
  * @property {string[] | undefined} zones - List of security zones user has access to
+ * @property {string | undefined} avatar - User's avatar URL
  */
 export interface User {
   id: string;
   email: string;
+  name: string;
   username?: string;
   role: 'admin' | 'user';
   permissions: string[];
   isActive: boolean;
   lastLogin?: Date;
   zones?: string[];
+  avatar?: string;
 }
 
 /**

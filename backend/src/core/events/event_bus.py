@@ -102,5 +102,5 @@ class EventBus:
 
     def _setup_logger(self):
         """Setup event bus logger"""
-        from core.logging import LogManager
-        return LogManager().get_logger("EventBus") 
+        from core.logging import get_logger
+        return get_logger("EventBus") 

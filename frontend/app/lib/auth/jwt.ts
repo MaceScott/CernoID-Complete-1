@@ -1,5 +1,6 @@
+/// <reference types="node" />
 import { jwtVerify, JWTPayload } from 'jose';
-import { User } from './types';
+import { User } from '@/types/user';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -7,9 +8,13 @@ interface JWTUser extends JWTPayload {
   id: string;
   email: string;
   name: string;
-  role: string;
-  permissions: string[];
-  zones: string[];
+  role: 'ADMIN' | 'USER' | 'SECURITY';
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLogin?: string;
+  preferences?: Record<string, unknown>;
+  accessHistory?: Record<string, unknown>;
 }
 
 export async function verifyToken(token: string): Promise<User | null> {
@@ -26,8 +31,9 @@ export async function verifyToken(token: string): Promise<User | null> {
         typeof (payload as JWTUser).id === 'string' &&
         typeof (payload as JWTUser).email === 'string' &&
         typeof (payload as JWTUser).role === 'string' &&
-        Array.isArray((payload as JWTUser).permissions) &&
-        Array.isArray((payload as JWTUser).zones)
+        typeof (payload as JWTUser).active === 'boolean' &&
+        typeof (payload as JWTUser).createdAt === 'string' &&
+        typeof (payload as JWTUser).updatedAt === 'string'
       );
     };
 
@@ -40,8 +46,12 @@ export async function verifyToken(token: string): Promise<User | null> {
       email: payload.email,
       name: payload.name,
       role: payload.role,
-      permissions: payload.permissions,
-      zones: payload.zones
+      active: payload.active,
+      createdAt: payload.createdAt,
+      updatedAt: payload.updatedAt,
+      lastLogin: payload.lastLogin,
+      preferences: payload.preferences,
+      accessHistory: payload.accessHistory
     };
   } catch (error) {
     console.error('Token verification error:', error);

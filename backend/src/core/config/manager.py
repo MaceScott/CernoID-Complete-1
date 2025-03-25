@@ -29,12 +29,13 @@ class ConfigManager:
             if self._config_path.exists():
                 with open(self._config_path, 'r') as f:
                     self._config = yaml.safe_load(f)
+                logger.info(f"Loaded configuration from {self._config_path}")
             else:
                 logger.warning(f"Config file {self._config_path} not found, using defaults")
-                self._config = {}
+                self._config = self._get_default_config()
         except Exception as e:
-            logger.error(f"Failed to load config: {e}")
-            self._config = {}
+            logger.error(f"Error loading config: {str(e)}")
+            self._config = self._get_default_config()
     
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value"""
@@ -78,6 +79,44 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Failed to save config: {e}")
             raise IOError(f"Failed to save configuration: {e}")
+
+    async def load_all(self) -> Dict:
+        """Load all configuration settings"""
+        return self._config
+
+    def _get_default_config(self) -> Dict:
+        """Get default configuration structure"""
+        return {
+            'database': {
+                'url': 'postgresql://postgres:postgres@db:5432/cernoid',
+                'pool_size': 5,
+                'max_overflow': 10,
+                'pool_timeout': 30,
+                'pool_recycle': 1800
+            },
+            'recognition': {
+                'model_path': '/app/models/face_recognition_model.h5',
+                'confidence_threshold': 0.6,
+                'max_faces': 10
+            },
+            'camera': {
+                'device_id': 0,
+                'width': 640,
+                'height': 480,
+                'fps': 30
+            },
+            'logging': {
+                'level': 'INFO',
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                'file': '/app/logs/app.log'
+            },
+            'security': {
+                'jwt_secret': 'your-secret-key',
+                'jwt_algorithm': 'HS256',
+                'access_token_expire_minutes': 30,
+                'password_hash_algorithm': 'bcrypt'
+            }
+        }
 
 # Initialize global config instance
 config = ConfigManager("config/config.yaml") 

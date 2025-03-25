@@ -26,9 +26,11 @@ COPY prisma ./prisma/
 
 # Install dependencies with retry logic
 RUN npm config set fetch-retries 5 && \
-    npm config set fetch-retry-mintimeout 10000 && \
-    npm config set fetch-retry-maxtimeout 60000 && \
-    npm install --no-audit --no-fund --verbose
+    npm config set fetch-retry-factor 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm install --legacy-peer-deps && \
+    npm install --save-dev typescript @types/react @types/node @types/lodash eslint --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -48,10 +50,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Create non-root user
-RUN useradd -r -u 1001 nextjs && \
-    mkdir -p /app/data /app/public && \
-    chown -R nextjs:nextjs /app
+# Create non-root user and set up home directory
+RUN useradd -r -u 1001 -m nextjs && \
+    mkdir -p /app/data /app/public /app/public/models && \
+    chown -R nextjs:nextjs /app && \
+    chmod -R 755 /app/public/models && \
+    mkdir -p /home/nextjs/.npm && \
+    chown -R nextjs:nextjs /home/nextjs
 
 # Copy necessary files from builder
 COPY --chown=nextjs:nextjs package*.json ./
@@ -65,6 +70,7 @@ COPY --chown=nextjs:nextjs --from=builder /app/package.json ./
 # Set environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOME=/home/nextjs
 
 # Switch to non-root user
 USER nextjs

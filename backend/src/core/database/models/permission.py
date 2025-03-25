@@ -6,9 +6,9 @@ from typing import List, Optional
 from sqlalchemy import Column, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
-from .base import BaseModel
+from ..base import Base
 
-class Permission(BaseModel):
+class Permission(Base):
     """Permission model for role-based access control."""
     
     __tablename__ = 'permissions'
@@ -27,10 +27,13 @@ class Permission(BaseModel):
     users = relationship('User', secondary='user_permissions', back_populates='permissions')
 
     def to_dict(self) -> dict:
-        """Convert permission to dictionary with additional fields."""
-        data = super().to_dict()
-        data['role'] = self.role
-        data['resource'] = self.resource
-        data['action'] = self.action
-        data['location'] = self.location
-        return data 
+        """Convert permission to dictionary."""
+        return {
+            'id': self.id,
+            'role': self.role,
+            'resource': self.resource,
+            'action': self.action,
+            'location': self.location,
+            'created_by': self.created_by,
+            'updated_by': self.updated_by
+        } 

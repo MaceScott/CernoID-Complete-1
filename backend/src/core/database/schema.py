@@ -1,3 +1,7 @@
+"""
+Database schema management module.
+"""
+
 from typing import Dict, List, Optional, Any, Type
 from enum import Enum
 import json
@@ -74,7 +78,7 @@ class SchemaManager(BaseComponent):
         """Get table model"""
         return self._models.get(name)
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def create_table(self, table: Table) -> None:
         """Create database table"""
         db = self.app.get_component('database')
@@ -99,7 +103,7 @@ class SchemaManager(BaseComponent):
                 self.logger.error(f"Failed to create table '{table.name}': {str(e)}")
                 raise
 
-    @handle_errors(logger=None)
+    @handle_errors
     async def drop_table(self, name: str) -> None:
         """Drop database table"""
         db = self.app.get_component('database')
@@ -179,13 +183,7 @@ class SchemaManager(BaseComponent):
             for constraint in table.constraints:
                 columns.append(self._format_constraint(constraint))
                 
-        query = f"""
-            CREATE TABLE {table.name} (
-                {',\n    '.join(columns)}
-            )
-        """
-        
-        return query
+        return f"CREATE TABLE {table.name} ({','.join(columns)})"
 
     def _generate_create_index(self,
                              table_name: str,
@@ -195,10 +193,7 @@ class SchemaManager(BaseComponent):
         columns = ', '.join(index['columns'])
         unique = 'UNIQUE ' if index.get('unique') else ''
         
-        return f"""
-            CREATE {unique}INDEX {index_name}
-            ON {table_name} ({columns})
-        """
+        return f"CREATE {unique}INDEX {index_name} ON {table_name} ({columns})"
 
     def _get_sql_type(self, column: Column) -> str:
         """Get SQL type definition"""

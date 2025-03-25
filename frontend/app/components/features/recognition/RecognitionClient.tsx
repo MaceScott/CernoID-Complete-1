@@ -2,7 +2,8 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
-import { FaceDetectionResult } from '@/types/recognition';
+import { FaceDetectionResult, RecognitionOptions } from '@/types/recognition';
+import { captureFrame } from './core';
 
 interface RecognitionClientProps {
   title: string;
@@ -11,87 +12,92 @@ interface RecognitionClientProps {
   onError: (error: Error) => void;
   showResults?: boolean;
   showControls?: boolean;
-  recognitionOptions?: {
-    minConfidence: number;
-    enableLandmarks: boolean;
-    enableDescriptors: boolean;
-  };
+  recognitionOptions?: RecognitionOptions;
 }
+
+const defaultOptions: RecognitionOptions = {
+  confidenceThreshold: 0.8,
+  detectLandmarks: true,
+  extractDescriptor: true
+};
 
 export const RecognitionClient: React.FC<RecognitionClientProps> = ({
   title,
   description,
   onCapture,
   onError,
-  showResults = true,
+  showResults = false,
   showControls = true,
-  recognitionOptions = {
-    minConfidence: 0.8,
-    enableLandmarks: true,
-    enableDescriptors: true
-  }
+  recognitionOptions
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [detectionResult, setDetectionResult] = useState<FaceDetectionResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    return () => {
-      stopStream();
-    };
-  }, []);
+  const handleError = (error: Error) => {
+    setError(error.message);
+    onError?.(error);
+  };
 
-  const startStream = async () => {
+  const startVideo = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' }
+      });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        setIsStreaming(true);
       }
-      setIsStreaming(true);
     } catch (err) {
-      onError(err instanceof Error ? err : new Error('Failed to access camera'));
+      const error = err instanceof Error ? err : new Error('Failed to access camera');
+      handleError(error);
     }
   };
 
-  const stopStream = () => {
+  const stopVideo = () => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
       videoRef.current.srcObject = null;
+      setIsStreaming(false);
     }
-    setIsStreaming(false);
   };
 
-  const captureImage = async () => {
-    if (!videoRef.current || !isStreaming) return;
-
+  const handleCapture = async () => {
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
 
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-        }, 'image/jpeg', 0.95);
-      });
+      if (!canvas || !video || !detectionResult) {
+        handleError(new Error('Failed to capture image: missing required elements'));
+        return;
+      }
 
+      const blob = await captureFrame(video, detectionResult);
       const formData = new FormData();
       formData.append('image', blob, 'face.jpg');
 
-      onCapture(formData);
+      onCapture?.(formData);
     } catch (err) {
-      onError(err instanceof Error ? err : new Error('Failed to capture image'));
+      handleError(err instanceof Error ? err : new Error('Failed to capture image'));
     }
   };
 
+  useEffect(() => {
+    return () => {
+      stopVideo();
+    };
+  }, []);
+
   return (
-    <Box sx={{ maxWidth: 'sm', mx: 'auto', p: 2 }}>
+    <Box sx={{ width: '100%', maxWidth: 600, mx: 'auto', p: 2 }}>
       <Typography variant="h5" gutterBottom>
         {title}
       </Typography>
-      <Typography variant="body1" color="text.secondary" paragraph>
+      <Typography variant="body1" gutterBottom>
         {description}
       </Typography>
 
@@ -100,71 +106,46 @@ export const RecognitionClient: React.FC<RecognitionClientProps> = ({
           ref={videoRef}
           autoPlay
           playsInline
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+        <canvas
+          ref={canvasRef}
           style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
-            borderRadius: '8px',
-            display: isStreaming ? 'block' : 'none'
+            objectFit: 'cover'
           }}
         />
-        {!isStreaming && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: 'grey.100',
-              borderRadius: '8px'
-            }}
-          >
-            <Typography color="text.secondary">Camera not active</Typography>
-          </Box>
-        )}
       </Box>
 
       {showControls && (
-        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-          {!isStreaming ? (
+        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={isStreaming ? stopVideo : startVideo}
+          >
+            {isStreaming ? 'Stop Camera' : 'Start Camera'}
+          </Button>
+          {isStreaming && (
             <Button
               variant="contained"
               color="primary"
-              onClick={startStream}
+              onClick={handleCapture}
             >
-              Start Camera
+              Capture
             </Button>
-          ) : (
-            <>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={captureImage}
-              >
-                Capture
-              </Button>
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={stopStream}
-              >
-                Stop Camera
-              </Button>
-            </>
           )}
         </Box>
       )}
 
-      {showResults && detectionResult && (
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            Confidence: {(detectionResult.confidence * 100).toFixed(1)}%
-          </Typography>
-        </Box>
+      {error && (
+        <Typography color="error" gutterBottom>
+          {error}
+        </Typography>
       )}
     </Box>
   );

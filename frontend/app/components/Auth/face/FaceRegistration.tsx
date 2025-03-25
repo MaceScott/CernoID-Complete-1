@@ -54,9 +54,9 @@ export function FaceRegistration({ onSuccess, onError }: FaceRegistrationProps) 
           showResults={true}
           showControls={true}
           recognitionOptions={{
-            minConfidence: 0.8,
-            enableLandmarks: true,
-            enableDescriptors: true
+            confidenceThreshold: 0.8,
+            detectLandmarks: true,
+            extractDescriptor: true
           }}
         />
       )}

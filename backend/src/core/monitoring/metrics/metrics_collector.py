@@ -17,7 +17,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ..base import BaseComponent
-from ..utils.errors import MonitoringError
+from ..utils.errors import MonitorError
 
 @dataclass
 class MetricDefinition:

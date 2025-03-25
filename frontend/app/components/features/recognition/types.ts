@@ -1,32 +1,8 @@
-// Core types
-export interface FaceDetectionResult {
-  id: string;
-  confidence: number;
-  box: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  landmarks?: {
-    positions: Array<{ x: number; y: number }>;
-  };
-  descriptor?: Float32Array;
-}
-
-export interface RecognitionOptions {
-  minConfidence: number;
-  enableLandmarks?: boolean;
-  enableDescriptors?: boolean;
-  maxResults?: number;
-  useTinyModel?: boolean;
-}
+import type { RecognitionOptions } from '@/types/recognition';
 
 // Default configuration
 export const DEFAULT_RECOGNITION_OPTIONS: RecognitionOptions = {
-  minConfidence: 0.7,
-  enableLandmarks: true,
-  enableDescriptors: true,
-  maxResults: 1,
-  useTinyModel: true
+  confidenceThreshold: 0.7,
+  detectLandmarks: true,
+  extractDescriptor: true,
 }; 

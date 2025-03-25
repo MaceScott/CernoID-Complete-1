@@ -143,8 +143,8 @@ export function RecognitionViewer({
       {showResults && currentDetection && (
         <ResultsViewer
           detection={currentDetection}
-          showLandmarks={recognitionOptions?.enableLandmarks}
-          showDescriptor={recognitionOptions?.enableDescriptors}
+          showLandmarks={recognitionOptions?.detectLandmarks}
+          showDescriptor={recognitionOptions?.extractDescriptor}
         />
       )}
     </Box>

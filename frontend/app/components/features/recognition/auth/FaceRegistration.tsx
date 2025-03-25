@@ -29,12 +29,9 @@ export function FaceRegistration({
   };
 
   const recognitionOptions: RecognitionOptions = {
-    minConfidence: 0.8,
-    maxFaces: 1,
-    useGpu: false,
-    modelType: 'default',
-    enableLandmarks: true,
-    enableDescriptors: true
+    confidenceThreshold: 0.8,
+    detectLandmarks: true,
+    extractDescriptor: true
   };
 
   return (

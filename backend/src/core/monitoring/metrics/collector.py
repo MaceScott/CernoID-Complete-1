@@ -4,11 +4,12 @@ from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass
 import json
-import aioredis
+from redis.asyncio import Redis
 import prometheus_client as prom
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 import psutil
 import statistics
+from ...config.settings import get_settings
 
 @dataclass
 class MetricDefinition:
@@ -24,9 +25,10 @@ class MetricsCollector:
     
     def __init__(self, config: Dict):
         self.config = config
+        self.settings = get_settings()
         self.logger = logging.getLogger('MetricsCollector')
         self.registry = CollectorRegistry()
-        self._redis: Optional[aioredis.Redis] = None
+        self._redis: Optional[Redis] = None
         self._metrics: Dict[str, Any] = {}
         self._collection_task: Optional[asyncio.Task] = None
         self._running: bool = False
@@ -36,9 +38,11 @@ class MetricsCollector:
         """Initialize metrics collector"""
         try:
             # Connect to Redis
-            self._redis = await aioredis.create_redis_pool(
-                self.config['redis_url']
+            self._redis = Redis.from_url(
+                self.settings.REDIS_URL,
+                decode_responses=True
             )
+            await self._redis.ping()
             
             # Start collection
             self._running = True
@@ -65,8 +69,7 @@ class MetricsCollector:
                     pass
                     
             if self._redis:
-                self._redis.close()
-                await self._redis.wait_closed()
+                await self._redis.close()
                 
             self.logger.info("Metrics collector cleaned up")
             

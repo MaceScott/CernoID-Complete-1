@@ -16,7 +16,6 @@ import aioredis
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 import structlog
 from pythonjsonlogger import jsonlogger
-from ..base import BaseComponent
 from ..utils.errors import handle_errors
 
 @dataclass
@@ -145,33 +144,34 @@ class RedisLogHandler(AsyncLogHandler):
         except Exception as e:
             sys.stderr.write(f"Redis log addition failed: {str(e)}\n")
 
-class LogManager(BaseComponent):
+class LogManager:
     """Advanced logging management system"""
     
     def __init__(self, config: dict):
-        super().__init__(config)
+        self.config = config
         self._handlers: Dict[str, logging.Handler] = {}
         self._formatters: Dict[str, logging.Formatter] = {}
         self._filters: Dict[str, logging.Filter] = {}
         self._loggers: Dict[str, logging.Logger] = {}
-        self._default_level = self.config.get('logging.level', 'INFO')
-        self._default_format = self.config.get(
+        self._default_level = config.get('logging.level', 'INFO')
+        self._default_format = config.get(
             'logging.format',
             '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
         )
-        self._rotation_interval = self.config.get(
+        self._rotation_interval = config.get(
             'logging.rotation_interval',
             'D'
         )
-        self._retention_days = self.config.get('logging.retention_days', 30)
-        self._async_mode = self.config.get('logging.async', True)
-        self._queue_size = self.config.get('logging.queue_size', 1000)
+        self._retention_days = config.get('logging.retention_days', 30)
+        self._async_mode = config.get('logging.async', True)
+        self._queue_size = config.get('logging.queue_size', 1000)
         self._stats = {
             'messages': 0,
             'errors': 0,
             'warnings': 0
         }
 
+    @handle_errors
     async def initialize(self) -> None:
         """Initialize logging manager"""
         # Configure root logger
@@ -206,6 +206,7 @@ class LogManager(BaseComponent):
                for h in self._handlers.values()):
             asyncio.create_task(self._cleanup_task())
 
+    @handle_errors
     async def cleanup(self) -> None:
         """Cleanup logging resources"""
         # Close handlers
@@ -217,7 +218,7 @@ class LogManager(BaseComponent):
         self._filters.clear()
         self._loggers.clear()
 
-    @handle_errors(logger=None)
+    @handle_errors
     def get_logger(self,
                   name: str,
                   level: Optional[str] = None) -> logging.Logger:
@@ -233,7 +234,7 @@ class LogManager(BaseComponent):
         self._loggers[name] = logger
         return logger
 
-    @handle_errors(logger=None)
+    @handle_errors
     def set_level(self,
                  level: str,
                  logger_name: Optional[str] = None) -> None:

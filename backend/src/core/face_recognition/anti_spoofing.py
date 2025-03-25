@@ -4,25 +4,51 @@ import numpy as np
 import tensorflow as tf
 import os
 import logging
+from pathlib import Path
 
 # Load the pre-trained shape predictor model
-PREDICTOR_PATH = "path/to/shape_predictor_68_face_landmarks.dat"
+PREDICTOR_PATH = os.getenv("SHAPE_PREDICTOR_PATH", "/app/models/shape_predictor_68_face_landmarks.dat")
 
 # Initialize dlib's face detector and shape predictor
 face_detector = dlib.get_frontal_face_detector()
-shape_predictor = dlib.shape_predictor(PREDICTOR_PATH)
 
-# Load the pre-trained liveness detection model
-model_path = os.getenv("LIVENESS_MODEL_PATH", "models/liveness_model.h5")
-if not os.path.isfile(model_path):
-    raise FileNotFoundError(f"Liveness model not found at {model_path}")
-
-# Improved error handling for model loading
+# Improved error handling for shape predictor loading
 try:
-    model = tf.keras.models.load_model(model_path)
+    if not os.path.isfile(PREDICTOR_PATH):
+        raise FileNotFoundError(f"Shape predictor model not found at {PREDICTOR_PATH}")
+    shape_predictor = dlib.shape_predictor(PREDICTOR_PATH)
 except Exception as e:
-    logging.error(f"Failed to load liveness model: {e}")
+    logging.error(f"Failed to load shape predictor: {e}")
     raise
+
+# Load or create the pre-trained liveness detection model
+model_path = os.getenv("LIVENESS_MODEL_PATH", "/app/models/liveness_model.h5")
+if not os.path.isfile(model_path):
+    logging.info("Creating a simple liveness detection model...")
+    # Create a simple CNN model for liveness detection
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(224, 224, 3)),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    model.compile(optimizer='adam',
+                 loss='binary_crossentropy',
+                 metrics=['accuracy'])
+    # Save the model
+    model.save(model_path)
+    logging.info(f"Saved liveness detection model to {model_path}")
+else:
+    try:
+        model = tf.keras.models.load_model(model_path)
+        logging.info("Loaded existing liveness detection model")
+    except Exception as e:
+        logging.error(f"Failed to load liveness model: {e}")
+        raise
 
 
 def detect_blink(eye_points, facial_landmarks):

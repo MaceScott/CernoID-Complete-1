@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from ..base import BaseComponent
 from ..utils.errors import RegistrationError
-from ..utils.decorators import measure_performance
+from ..monitoring.decorators import measure_performance
 from .quality import QualityAssessor
 from .core import FaceDetection, FaceRecognitionSystem
 

@@ -12,10 +12,47 @@ from ..utils.errors import handle_errors
 
 @dataclass
 class SystemMetrics:
+    """System-level metrics"""
     cpu_usage: float
     memory_usage: float
     disk_usage: float
     network_io: Dict[str, int]
+    timestamp: float
+
+@dataclass
+class ApplicationMetrics:
+    """Application-level metrics"""
+    request_count: int
+    error_count: int
+    response_times: List[float]
+    active_users: int
+    timestamp: float
+
+@dataclass
+class DatabaseMetrics:
+    """Database-level metrics"""
+    query_count: int
+    error_count: int
+    query_times: List[float]
+    active_connections: int
+    timestamp: float
+
+@dataclass
+class NetworkMetrics:
+    """Network-level metrics"""
+    bytes_sent: int
+    bytes_received: int
+    active_connections: int
+    error_count: int
+    timestamp: float
+
+@dataclass
+class SecurityMetrics:
+    """Security-related metrics"""
+    auth_attempts: int
+    failed_auth_attempts: int
+    blocked_requests: int
+    suspicious_activities: int
     timestamp: float
 
 class MetricsCollector(BaseComponent):

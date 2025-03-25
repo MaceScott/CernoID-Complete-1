@@ -11,30 +11,52 @@ logger = get_logger(__name__)
 class EventManager(BaseComponent):
     """Manages system events and their handlers."""
     
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__()
-        self.config = config
-        self._handlers: Dict[str, List[Callable]] = {}
-        self._event_queue = asyncio.Queue()
-        self._processing = False
-        self._wildcards: Set[Callable] = set()
-        self._middleware: List[Callable] = []
-        self._max_listeners = self.config.get('events.max_listeners', 100)
-        self._propagate_errors = self.config.get('events.propagate_errors', False)
-        self._async_dispatch = self.config.get('events.async_dispatch', True)
-        self._queue_size = self.config.get('events.queue_size', 1000)
-        self._stats = {
-            'emitted': 0,
-            'handled': 0,
-            'errors': 0
-        }
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            # Initialize with empty config, will be updated in initialize()
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        # Only initialize if not already initialized
+        if not hasattr(self, '_initialized'):
+            # Initialize with empty config, will be updated in initialize()
+            super().__init__({})
+            self._initialized = False
+            self._handlers: Dict[str, List[Callable]] = {}
+            self._event_queue = asyncio.Queue()
+            self._processing = False
+            self._wildcards: Set[Callable] = set()
+            self._middleware: List[Callable] = []
+            self._stats = {
+                'emitted': 0,
+                'handled': 0,
+                'errors': 0
+            }
 
     @handle_errors
     async def initialize(self) -> None:
         """Initialize the event manager."""
-        self._processing = True
-        asyncio.create_task(self._process_events())
-        
+        if not self._initialized:
+            # Import settings here to avoid circular imports
+            from ..config import settings
+            
+            # Update config with actual settings
+            self.config = settings.dict()
+            
+            # Initialize settings-dependent attributes
+            self._max_listeners = self.config.get('events.max_listeners', 100)
+            self._propagate_errors = self.config.get('events.propagate_errors', False)
+            self._async_dispatch = self.config.get('events.async_dispatch', True)
+            self._queue_size = self.config.get('events.queue_size', 1000)
+            
+            self._processing = True
+            asyncio.create_task(self._process_events())
+            self._initialized = True
+            logger.info("Event manager initialized successfully")
+
     @handle_errors
     async def cleanup(self) -> None:
         """Clean up event manager resources."""
@@ -241,8 +263,8 @@ class EventManager(BaseComponent):
             if self._propagate_errors:
                 raise
 
-# Global event manager instance
-event_manager = EventManager({})
+# Create singleton instance
+event_manager = EventManager()
 
 class Event:
     """Event object"""

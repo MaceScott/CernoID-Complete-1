@@ -3,15 +3,14 @@
 import { useState } from 'react';
 import {
   Box,
+  Button,
   Card,
   CardContent,
-  Typography,
+  CircularProgress,
   Grid,
-  Button,
-  CircularProgress
+  Typography
 } from '@mui/material';
 import { RecognitionClient } from '../core/RecognitionClient';
-import { FaceDetectionResult } from '..';
 
 interface FaceComparisonProps {
   onCompare?: (similarity: number) => void;
@@ -22,46 +21,45 @@ export function FaceComparison({
   onCompare,
   onError
 }: FaceComparisonProps) {
-  const [firstFace, setFirstFace] = useState<FaceDetectionResult | null>(null);
-  const [secondFace, setSecondFace] = useState<FaceDetectionResult | null>(null);
+  const [firstFace, setFirstFace] = useState<FormData | null>(null);
+  const [secondFace, setSecondFace] = useState<FormData | null>(null);
   const [similarity, setSimilarity] = useState<number | null>(null);
   const [isComparing, setIsComparing] = useState(false);
 
   const handleFirstCapture = (faceData: FormData) => {
-    // In a real implementation, this would extract the face descriptor from the FormData
-    // For now, we'll simulate it
-    const mockDescriptor = new Float32Array(128);
-    setFirstFace({
-      id: '1',
-      confidence: 0.95,
-      box: { x: 0, y: 0, width: 100, height: 100 },
-      descriptor: mockDescriptor
-    });
+    setFirstFace(faceData);
+    setSimilarity(null);
   };
 
   const handleSecondCapture = (faceData: FormData) => {
-    // Similar mock implementation
-    const mockDescriptor = new Float32Array(128);
-    setSecondFace({
-      id: '2',
-      confidence: 0.95,
-      box: { x: 0, y: 0, width: 100, height: 100 },
-      descriptor: mockDescriptor
-    });
+    setSecondFace(faceData);
+    setSimilarity(null);
   };
 
   const compareFaces = async () => {
-    if (!firstFace?.descriptor || !secondFace?.descriptor) return;
+    if (!firstFace || !secondFace) return;
 
     setIsComparing(true);
     try {
-      // In a real implementation, this would calculate the actual similarity
-      // For now, we'll simulate a comparison
-      const mockSimilarity = Math.random() * 0.3 + 0.7; // Random value between 0.7 and 1.0
-      setSimilarity(mockSimilarity);
-      if (onCompare) onCompare(mockSimilarity);
+      const formData = new FormData();
+      formData.append('face1', firstFace.get('face') as Blob);
+      formData.append('face2', secondFace.get('face') as Blob);
+
+      const response = await fetch('/api/recognition/compare', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to compare faces');
+      }
+
+      const score = data.data.similarity;
+      setSimilarity(score);
+      onCompare?.(score);
     } catch (error) {
-      if (onError) onError(error as Error);
+      onError?.(error as Error);
     } finally {
       setIsComparing(false);
     }
@@ -69,10 +67,6 @@ export function FaceComparison({
 
   return (
     <Box>
-      <Typography variant="h6" gutterBottom>
-        Face Comparison
-      </Typography>
-
       <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
           <Card>
@@ -85,8 +79,9 @@ export function FaceComparison({
                 onError={onError}
                 showResults={true}
                 recognitionOptions={{
-                  minConfidence: 0.8,
-                  enableDescriptors: true
+                  confidenceThreshold: 0.8,
+                  detectLandmarks: true,
+                  extractDescriptor: true
                 }}
               />
             </CardContent>
@@ -104,8 +99,9 @@ export function FaceComparison({
                 onError={onError}
                 showResults={true}
                 recognitionOptions={{
-                  minConfidence: 0.8,
-                  enableDescriptors: true
+                  confidenceThreshold: 0.8,
+                  detectLandmarks: true,
+                  extractDescriptor: true
                 }}
               />
             </CardContent>

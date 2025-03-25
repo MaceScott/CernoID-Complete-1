@@ -48,9 +48,9 @@ export function ResultsViewer({
               Bounding Box
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              x: {Math.round(detection.box.x)}, y: {Math.round(detection.box.y)}
+              x: {Math.round(detection.boundingBox.x)}, y: {Math.round(detection.boundingBox.y)}
               <br />
-              width: {Math.round(detection.box.width)}, height: {Math.round(detection.box.height)}
+              width: {Math.round(detection.boundingBox.width)}, height: {Math.round(detection.boundingBox.height)}
             </Typography>
           </Box>
 
@@ -60,7 +60,7 @@ export function ResultsViewer({
                 Facial Landmarks
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {detection.landmarks.positions.length} points detected
+                {detection.landmarks.length} points detected
               </Typography>
             </Box>
           )}

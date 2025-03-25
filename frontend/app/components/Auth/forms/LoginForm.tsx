@@ -96,6 +96,24 @@ export function LoginForm() {
     }
   };
 
+  const handleFaceCapture = async (formData: FormData) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      await loginWithFace(formData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Face login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleError = (err: Error) => {
+    setError(err.message);
+    setLoading(false);
+  };
+
   return (
     <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
       <CardContent>
@@ -161,24 +179,13 @@ export function LoginForm() {
           <RecognitionClient
             title="Face Login"
             description="Please look directly at the camera and ensure good lighting for face recognition."
-            onCapture={async (formData) => {
-              setLoading(true);
-              setError(null);
-              try {
-                await loginWithFace(formData);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Face login failed');
-              } finally {
-                setLoading(false);
-              }
-            }}
-            onError={(err) => setError(err.message)}
+            onCapture={handleFaceCapture}
+            onError={handleError}
             showResults={false}
-            showControls={true}
             recognitionOptions={{
-              minConfidence: 0.8,
-              enableLandmarks: true,
-              enableDescriptors: true
+              confidenceThreshold: 0.8,
+              detectLandmarks: true,
+              extractDescriptor: true
             }}
           />
         </TabPanel>

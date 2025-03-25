@@ -27,7 +27,7 @@ export class LoggingMiddleware {
         status: response.status,
         duration,
         ip: request.ip,
-        userAgent: request.headers.get('user-agent'),
+        userAgent: request.headers.get('user-agent') ?? undefined,
         requestId,
       };
 
@@ -47,7 +47,7 @@ export class LoggingMiddleware {
         status: 500,
         duration,
         ip: request.ip,
-        userAgent: request.headers.get('user-agent'),
+        userAgent: request.headers.get('user-agent') ?? undefined,
         requestId,
         error: error as Error,
       };

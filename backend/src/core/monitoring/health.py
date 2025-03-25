@@ -423,7 +423,7 @@ async def health_check(
         health_status = await system.check_health()
         
         # Get component health
-        component_health = await system_manager.get_component_health()
+        component_health = await system_manager.get_component_status()
         
         return {
             "status": "healthy" if health_status["healthy"] else "unhealthy",
@@ -445,7 +445,7 @@ async def readiness_check(
     try:
         # Check if system is ready to accept traffic
         health_status = await system.check_health()
-        component_health = await system_manager.get_component_health()
+        component_health = await system_manager.get_component_status()
         
         # System is ready if all critical components are healthy
         is_ready = all(

@@ -31,19 +31,23 @@ class Settings(BaseSettings):
 
     # Core settings
     ENVIRONMENT: Environment = Environment.DEVELOPMENT
-    DEBUG: bool = True
+    DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
+    
+    # Application settings
+    APP_NAME: str = "CernoID"
+    APP_DESCRIPTION: str = "Advanced Face Recognition System"
+    APP_VERSION: str = "1.0.0"
+    API_V1_PREFIX: str = "/api/v1"
+    PROJECT_NAME: str = "CernoID API"
 
     # Database settings
-    DB_HOST: str = "db"
-    DB_PORT: int = 5432
-    DB_USER: str = "postgres"
-    DB_PASSWORD: str = "postgres"
-    DB_NAME: str = "cernoid"
-
-    @computed_field
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/cernoid"
+    DB_ECHO: bool = False
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
 
     # Redis settings
     REDIS_HOST: str = "redis"

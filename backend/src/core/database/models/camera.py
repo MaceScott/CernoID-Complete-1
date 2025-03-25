@@ -6,9 +6,9 @@ from typing import List, Optional
 from sqlalchemy import Column, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 
-from .base import BaseModel
+from ..base import Base
 
-class Camera(BaseModel):
+class Camera(Base):
     """Camera model for managing security cameras."""
     
     __tablename__ = 'cameras'
@@ -30,8 +30,13 @@ class Camera(BaseModel):
 
     def to_dict(self) -> dict:
         """Convert camera to dictionary with additional fields."""
-        data = super().to_dict()
-        data['status'] = self.status
-        data['location'] = self.location
-        data['settings'] = self.settings
-        return data 
+        return {
+            'id': self.id,
+            'name': self.name,
+            'url': self.url,
+            'location': self.location,
+            'status': self.status,
+            'settings': self.settings,
+            'created_by': self.created_by,
+            'updated_by': self.updated_by
+        } 

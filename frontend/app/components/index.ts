@@ -12,5 +12,4 @@ export * from './features/recognition';
 export * from './Auth';
 
 // Shared Components
-export * from './shared/LoadingOverlay';
-export * from './shared/ErrorBoundary'; 
+export * from './shared'; 

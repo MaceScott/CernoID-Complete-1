@@ -17,7 +17,7 @@ export interface RateLimitMiddlewareOptions {
   onError?: (error: Error) => void;
 }
 
-export type RateLimitMiddleware = (
+export type RateLimitMiddlewareFunction = (
   request: NextRequest,
   options: RateLimitMiddlewareOptions
 ) => Promise<Response | undefined>; 

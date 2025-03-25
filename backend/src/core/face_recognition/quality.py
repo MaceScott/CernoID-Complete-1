@@ -14,7 +14,7 @@ import asyncio
 
 from ..base import BaseComponent
 from ..utils.errors import QualityError
-from ..utils.decorators import measure_performance
+from ..monitoring.decorators import measure_performance
 
 @dataclass
 class QualityMetrics:

@@ -21,7 +21,7 @@ export interface ErrorHandlingMiddlewareOptions {
   onError?: (error: Error) => void;
 }
 
-export type ErrorHandlingMiddleware = (
+export type ErrorHandlingMiddlewareFunction = (
   request: NextRequest,
   options: ErrorHandlingMiddlewareOptions
 ) => Promise<Response | undefined>; 

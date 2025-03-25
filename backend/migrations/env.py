@@ -6,10 +6,10 @@ import os
 import sys
 
 # Add the src directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Import your models here
-from models import Base
+from src.core.database.base import Base
 
 # This is the Alembic Config object
 config = context.config

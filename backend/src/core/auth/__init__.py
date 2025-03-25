@@ -6,4 +6,13 @@ from .dependencies import get_current_user
 from core.database.models.models import User
 from .manager import AuthManager
 
-__all__ = ['AuthService', 'get_current_user', 'User', 'AuthManager'] 
+# Create a singleton instance
+auth_service = AuthService()
+
+__all__ = [
+    'AuthService',
+    'auth_service',
+    'get_current_user',
+    'User',
+    'AuthManager'
+] 

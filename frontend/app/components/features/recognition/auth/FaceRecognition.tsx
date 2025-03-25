@@ -3,7 +3,7 @@
 import { Box } from '@mui/material';
 import { Typography } from '@mui/material';
 import { RecognitionClient } from '../core/RecognitionClient';
-import { DEFAULT_RECOGNITION_CONFIG } from '../../../../types/config/recognition';
+import { DEFAULT_RECOGNITION_OPTIONS } from '@/types/recognition';
 
 interface AuthFaceRecognitionProps {
   onSuccess: (faceData: FormData) => void;
@@ -25,9 +25,9 @@ export function AuthFaceRecognition({ onSuccess, onError }: AuthFaceRecognitionP
         onError={onError}
         showResults={false}
         recognitionOptions={{
-          ...DEFAULT_RECOGNITION_CONFIG,
-          enableLandmarks: true,
-          enableDescriptors: true
+          ...DEFAULT_RECOGNITION_OPTIONS,
+          detectLandmarks: true,
+          extractDescriptor: true
         }}
       />
     </Box>

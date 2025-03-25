@@ -45,6 +45,12 @@ const nextConfig = {
       ...config.resolve.alias,
       '@': require('path').resolve(__dirname, './app'),
     };
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      encoding: false,
+      path: false
+    };
     return config;
   },
   async headers() {

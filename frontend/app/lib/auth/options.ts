@@ -1,117 +1,84 @@
-import { NextAuthOptions, DefaultSession, DefaultUser } from 'next-auth';
-import { JWT } from 'next-auth/jwt';
+import { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { prisma } from '../prisma';
-import { compare } from 'bcryptjs';
-import type { Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import { JWT } from 'next-auth/jwt';
+import { Session } from 'next-auth';
 
-interface CustomUser extends DefaultUser {
-  username: string;
-  role: string;
-  permissions: string[];
-  firstName: string | null;
-  lastName: string | null;
-  phone: string | null;
-  active: boolean;
-  lastLogin: Date | null;
-}
+const prisma = new PrismaClient();
 
-declare module 'next-auth' {
-  interface Session extends DefaultSession {
-    user: CustomUser;
-  }
-
-  interface JWT {
-    role?: string;
-    permissions?: string[];
-    active?: boolean;
-    username?: string;
-  }
-
-  interface User extends CustomUser {}
-}
-
-export const authOptions: NextAuthOptions = {
+export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
       },
-      async authorize(credentials, req) {
+      async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          return null;
+          throw new Error('Please enter an email and password');
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: {
-            permissions: true
-          }
+          where: {
+            email: credentials.email,
+          },
         });
 
-        if (!user || !user.email) {
-          return null;
+        if (!user) {
+          throw new Error('No user found with this email');
         }
 
-        const isValid = await compare(credentials.password, user.password || '');
+        const isPasswordValid = await bcrypt.compare(
+          credentials.password,
+          user.password || ''
+        );
 
-        if (!isValid) {
-          return null;
+        if (!isPasswordValid) {
+          throw new Error('Invalid password');
         }
-
-        // Ensure we only return users with valid email addresses and required fields
-        const [firstName, lastName] = (user.name || '').split(' ');
-        const permissions = user.permissions.map((p: { resource: string; action: string }) => `${p.resource}:${p.action}`);
 
         return {
           id: user.id,
-          username: user.name || 'Anonymous',
-          name: user.name || 'Anonymous',
           email: user.email,
+          name: user.name,
           role: user.role,
-          permissions,
-          firstName: firstName || null,
-          lastName: lastName || null,
-          phone: null,
-          active: true,
-          lastLogin: user.updatedAt,
-          image: user.image,
-          emailVerified: user.emailVerified
-        } as CustomUser;
-      }
-    })
+          isAdmin: user.role === 'admin',
+          accessLevel: 1,
+          allowedZones: [],
+          status: 'active',
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+          lastLogin: null,
+        };
+      },
+    }),
   ],
-  session: {
-    strategy: 'jwt'
-  },
-  pages: {
-    signIn: '/login',
-    error: '/login'
-  },
   callbacks: {
-    async session({ session, token }) {
-      return {
-        ...session,
-        user: {
-          ...session.user,
-          id: token.sub,
-          role: token.role as string,
-          permissions: token.permissions as string[],
-          active: token.active as boolean,
-          username: token.username as string
-        }
-      };
-    },
-    async jwt({ token, user }) {
+    async jwt({ token, user }: { token: JWT; user: any }) {
       if (user) {
         token.role = user.role;
-        token.permissions = user.permissions;
-        token.active = user.active;
-        token.username = user.username;
+        token.isAdmin = user.isAdmin;
+        token.accessLevel = user.accessLevel;
+        token.allowedZones = user.allowedZones;
       }
       return token;
-    }
-  }
+    },
+    async session({ session, token }: { session: Session; token: JWT }) {
+      if (session?.user) {
+        session.user.role = token.role as string;
+        session.user.isAdmin = token.isAdmin as boolean;
+        session.user.accessLevel = token.accessLevel as number;
+        session.user.allowedZones = token.allowedZones as string[];
+      }
+      return session;
+    },
+  },
+  pages: {
+    signIn: '/auth/login',
+  },
+  session: {
+    strategy: 'jwt' as const,
+  },
 }; 

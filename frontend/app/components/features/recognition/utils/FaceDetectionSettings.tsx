@@ -21,20 +21,18 @@ export function FaceDetectionSettings({
   options,
   onChange
 }: FaceDetectionSettingsProps) {
-  const handleConfidenceChange = (_event: Event, value: number | number[]) => {
+  const handleConfidenceChange = (_: Event, value: number | number[]) => {
     onChange({
       ...options,
-      minConfidence: Array.isArray(value) ? value[0] : value
+      confidenceThreshold: Array.isArray(value) ? value[0] : value
     });
   };
 
-  const handleToggleChange = (setting: keyof RecognitionOptions) => {
-    return (_event: React.ChangeEvent<HTMLInputElement>) => {
-      onChange({
-        ...options,
-        [setting]: !options[setting as keyof RecognitionOptions]
-      });
-    };
+  const handleToggleChange = (key: keyof RecognitionOptions) => (_: React.ChangeEvent<HTMLInputElement>) => {
+    onChange({
+      ...options,
+      [key]: !options[key]
+    });
   };
 
   return (
@@ -47,18 +45,18 @@ export function FaceDetectionSettings({
         <Stack spacing={3}>
           <Box>
             <Typography variant="subtitle2" gutterBottom>
-              Minimum Confidence ({(options.minConfidence * 100).toFixed(0)}%)
+              Confidence Threshold ({(options.confidenceThreshold * 100).toFixed(0)}%)
             </Typography>
             <Slider
-              value={options.minConfidence}
+              value={options.confidenceThreshold}
               onChange={handleConfidenceChange}
               min={0.1}
-              max={1}
+              max={1.0}
               step={0.05}
               marks={[
                 { value: 0.1, label: '10%' },
                 { value: 0.5, label: '50%' },
-                { value: 1, label: '100%' }
+                { value: 1.0, label: '100%' }
               ]}
             />
           </Box>
@@ -66,31 +64,21 @@ export function FaceDetectionSettings({
           <FormControlLabel
             control={
               <Switch
-                checked={options.enableLandmarks}
-                onChange={handleToggleChange('enableLandmarks')}
+                checked={options.detectLandmarks}
+                onChange={handleToggleChange('detectLandmarks')}
               />
             }
-            label="Enable Facial Landmarks"
+            label="Detect Facial Landmarks"
           />
 
           <FormControlLabel
             control={
               <Switch
-                checked={options.enableDescriptors}
-                onChange={handleToggleChange('enableDescriptors')}
+                checked={options.extractDescriptor}
+                onChange={handleToggleChange('extractDescriptor')}
               />
             }
-            label="Enable Face Descriptors"
-          />
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={options.useTinyModel}
-                onChange={handleToggleChange('useTinyModel')}
-              />
-            }
-            label="Use Lightweight Model"
+            label="Extract Face Descriptor"
           />
         </Stack>
       </CardContent>

@@ -6,17 +6,17 @@ from typing import List, Optional
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Table
 from sqlalchemy.orm import relationship
 
-from .base import BaseModel
+from ..base import Base
 
 # Association table for user permissions
 user_permissions = Table(
     'user_permissions',
-    BaseModel.metadata,
+    Base.metadata,
     Column('user_id', String, ForeignKey('users.id'), primary_key=True),
     Column('permission_id', String, ForeignKey('permissions.id'), primary_key=True)
 )
 
-class User(BaseModel):
+class User(Base):
     """User model for authentication and user management."""
     
     __tablename__ = 'users'
@@ -44,4 +44,15 @@ class User(BaseModel):
 
     def has_role(self, role: str) -> bool:
         """Check if user has a specific role."""
-        return any(p.role == role for p in self.permissions) 
+        return any(p.role == role for p in self.permissions)
+        
+    def to_dict(self) -> dict:
+        """Convert user to dictionary."""
+        return {
+            'id': self.id,
+            'email': self.email,
+            'full_name': self.full_name,
+            'is_active': self.is_active,
+            'is_superuser': self.is_superuser,
+            'last_login': self.last_login.isoformat() if self.last_login else None
+        } 
