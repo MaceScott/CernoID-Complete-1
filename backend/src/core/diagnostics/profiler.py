@@ -6,7 +6,7 @@ import asyncio
 import time
 from pathlib import Path
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class Profiler(BaseComponent):
     """Application profiling and diagnostics"""

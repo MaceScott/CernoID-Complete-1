@@ -4,7 +4,7 @@ import json
 import pickle
 from datetime import datetime, timedelta
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class QueueManager(BaseComponent):
     """Advanced queue management system"""

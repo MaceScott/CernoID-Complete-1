@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 from ...utils.config import get_settings
 from ...utils.logging import get_logger
 from ..database.service import DatabaseService

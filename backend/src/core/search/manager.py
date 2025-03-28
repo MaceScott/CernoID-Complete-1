@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 import importlib
 from ..base import BaseComponent
-from ..utils.errors import handle_errors, SearchError
+from ..utils.decorators import handle_errors, SearchError
 
 class SearchManager(BaseComponent):
     """Advanced search management system"""

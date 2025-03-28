@@ -3,7 +3,7 @@ import json
 from enum import Enum
 from pydantic import BaseModel, Field, ValidationError
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import re
 from datetime import datetime
 

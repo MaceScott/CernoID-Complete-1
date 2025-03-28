@@ -1,6 +1,6 @@
-"""Configuration module initialization."""
-from .settings import Settings
+"""
+Configuration module initialization.
+"""
+from .settings import Settings, get_settings, Environment
 
-settings = Settings()
-
-__all__ = ['Settings', 'settings']
+__all__ = ['Settings', 'get_settings', 'Environment']

@@ -1,113 +1,83 @@
+"""
+Database connection management module.
+"""
+
+import asyncio
+import logging
 from typing import Optional, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
-from ..config import settings
-from ..logging.base import get_logger
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 
-logger = get_logger(__name__)
+from core.config.settings import get_settings
 
-class DatabaseConnection:
-    """Database connection manager implemented as a singleton."""
-    
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+settings = get_settings()
+logger = logging.getLogger(__name__)
+
+class DatabasePool:
+    """Database connection pool manager."""
     
     def __init__(self):
-        if not hasattr(self, '_initialized'):
-            self._initialized = False
-            self._initializing = False
-            self.engine: Optional[AsyncEngine] = None
-            self.async_session: Optional[sessionmaker] = None
-            self.db_url = None
-            self.logger = logger
-
+        """Initialize the database pool."""
+        self._engine: Optional[AsyncEngine] = None
+        self._session_factory = None
+        self._initialized = False
+        self._lock = asyncio.Lock()
+        
     async def initialize(self) -> None:
-        """Initialize database connection."""
+        """Initialize the database pool."""
         if self._initialized:
-            self.logger.info("Database already initialized")
             return
             
-        if self._initializing:
-            self.logger.info("Database initialization already in progress")
-            return
-            
-        try:
-            self._initializing = True
-            
-            # Get database URL from settings
-            self.db_url = settings.DATABASE_URL
-            
-            # Create engine
-            self.engine = create_async_engine(
-                self.db_url,
-                poolclass=NullPool,
-                echo=False,
-            )
-            
-            # Create session factory
-            self.async_session = sessionmaker(
-                self.engine,
-                class_=AsyncSession,
-                expire_on_commit=False,
-                autocommit=False,
-                autoflush=False,
-            )
-            
-            self._initialized = True
-            self.logger.info("Database initialized successfully")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to initialize database: {e}")
-            raise
-        finally:
-            self._initializing = False
-
-    async def cleanup(self) -> None:
-        """Clean up database resources."""
-        if not self._initialized:
-            return
-            
-        try:
-            if self.engine:
-                await self.engine.dispose()
-                self.engine = None
-                self.async_session = None
-            self._initialized = False
-            self.logger.info("Database cleaned up successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to clean up database: {e}")
-            raise
-
+        async with self._lock:
+            if self._initialized:
+                return
+                
+            try:
+                # Create engine
+                self._engine = create_async_engine(
+                    settings.DATABASE_URL,
+                    echo=settings.DB_ECHO,
+                    pool_size=settings.DB_POOL_SIZE,
+                    max_overflow=settings.DB_MAX_OVERFLOW,
+                    pool_timeout=settings.DB_POOL_TIMEOUT,
+                    pool_recycle=settings.DB_POOL_RECYCLE,
+                    poolclass=AsyncAdaptedQueuePool
+                )
+                
+                # Create session factory
+                self._session_factory = sessionmaker(
+                    self._engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                    autocommit=False,
+                    autoflush=False
+                )
+                
+                self._initialized = True
+                logger.info("Database pool initialized")
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize database pool: {e}")
+                raise
+                
     async def get_session(self) -> AsyncSession:
         """Get a database session."""
         if not self._initialized:
             await self.initialize()
-        return self.async_session()
+        return self._session_factory()
         
-    @property
-    def is_initialized(self) -> bool:
-        """Check if database is initialized."""
-        return self._initialized
+    async def close(self) -> None:
+        """Close the database pool."""
+        if self._engine is not None:
+            await self._engine.dispose()
+            self._engine = None
+            self._session_factory = None
+            self._initialized = False
+            logger.info("Database pool closed")
 
-    async def is_connected(self) -> bool:
-        """Check database connection."""
-        if not self._initialized:
-            return False
-            
-        try:
-            async with self.get_session() as session:
-                await session.execute("SELECT 1")
-            return True
-        except Exception:
-            return False
-
-# Create singleton instance
-db_pool = DatabaseConnection()
+# Global database pool instance
+db_pool = DatabasePool()
 
 async def get_db() -> AsyncSession:
     """FastAPI dependency for getting database sessions."""

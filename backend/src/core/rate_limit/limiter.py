@@ -8,7 +8,7 @@ import aioredis
 from collections import defaultdict
 from ..base import BaseComponent
 from ..connections.redis import RedisPool
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import hashlib
 from fastapi import Request, Response
 

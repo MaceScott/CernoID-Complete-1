@@ -38,8 +38,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from ..dependencies import get_current_user
-from ..schemas.system import SystemMetrics, StorageMetrics, BackupConfig
+from core.auth.dependencies import get_current_user
+from api.schemas.system import SystemMetrics, StorageMetrics, BackupConfig
 
 router = APIRouter(
     prefix="/api/v1/system",

@@ -1,8 +1,15 @@
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Config(BaseSettings):
     """Base configuration class."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="allow"  # Allow extra fields from env vars
+    )
     
     # Database settings
     DB_HOST: str = "db"
@@ -28,10 +35,6 @@ class Config(BaseSettings):
     # Face recognition settings
     FACE_RECOGNITION_MODEL_PATH: str = "/app/models/face_recognition"
     FACE_DETECTION_CONFIDENCE: float = 0.85
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 @lru_cache()
 def get_settings() -> Config:

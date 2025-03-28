@@ -1,7 +1,7 @@
 """Tests for database models."""
 import pytest
 from datetime import datetime
-from src.core.database.models.models import User, FaceEncoding, AccessLog
+from core.database.models.models import User, FaceEncoding, AccessLog
 
 def test_create_user(db_session):
     """Test user creation."""

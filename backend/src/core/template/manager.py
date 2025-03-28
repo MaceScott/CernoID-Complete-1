@@ -3,7 +3,7 @@ import asyncio
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class TemplateManager(BaseComponent):
     """Advanced template management system"""

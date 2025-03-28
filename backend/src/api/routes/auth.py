@@ -36,18 +36,23 @@ from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 import numpy as np
 import cv2
+from datetime import timedelta
+from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.service import AuthService
-from core.auth.schemas import Token, UserCreate, UserRead
+from api.schemas.auth import TokenResponse, UserCreate, UserResponse
 from core.auth.dependencies import get_current_user
-from core.database.connection import get_db
-from core.config import Settings
-from core.logging import get_logger
+from core.database import get_db
+from core.config.settings import get_settings
+from core.logging.base import get_logger
 from core.face_recognition.core import FaceRecognitionSystem
+from core.database.base import get_session
+from core.database.models import User
 
 # Initialize router and services
 router = APIRouter(prefix="/auth", tags=["auth"])
-settings = Settings()
+settings = get_settings()
 logger = get_logger(__name__)
 recognition_service = FaceRecognitionSystem()
 
@@ -68,7 +73,7 @@ def get_auth_service(db = Depends(get_db)) -> AuthService:
     """
     return AuthService()
 
-@router.post("/face-login", response_model=Token)
+@router.post("/face-login", response_model=TokenResponse)
 async def face_login(
     image: UploadFile = File(...),
     auth_service: AuthService = Depends(get_auth_service)
@@ -81,7 +86,7 @@ async def face_login(
         auth_service: Injected AuthService instance
     
     Returns:
-        Token: JWT access token and type
+        TokenResponse: JWT access token and type
     
     Raises:
         HTTPException: If face verification fails or image processing errors occur
@@ -111,35 +116,27 @@ async def face_login(
             detail=str(e)
         )
 
-@router.post("/token", response_model=Token)
-async def login(
+@router.post("/token")
+async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    auth_service: AuthService = Depends(get_auth_service)
-):
-    """
-    Traditional login endpoint using email/password.
-    
-    Args:
-        form_data: OAuth2 form data containing username and password
-        auth_service: Injected AuthService instance
-    
-    Returns:
-        Token: JWT access token and type
-    
-    Raises:
-        HTTPException: If authentication fails
-    """
-    user = await auth_service.authenticate_user(form_data.username, form_data.password)
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Login endpoint to get access token."""
+    auth_service = AuthService(settings)
+    user = await auth_service.authenticate_user(form_data.username, form_data.password, db)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = auth_service.create_access_token(data={"sub": user.username})
+    access_token = auth_service.create_access_token(
+        data={"sub": user.email},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@router.post("/register", response_model=UserRead)
+@router.post("/register", response_model=UserResponse)
 async def register(
     user_data: UserCreate,
     auth_service: AuthService = Depends(get_auth_service)
@@ -152,15 +149,15 @@ async def register(
         auth_service: Injected AuthService instance
     
     Returns:
-        UserRead: Created user information
+        UserResponse: Created user information
     
     Raises:
         HTTPException: If registration fails (e.g., duplicate email)
     """
     return await auth_service.create_user(user_data)
 
-@router.get("/me", response_model=UserRead)
-async def read_users_me(current_user: UserRead = Depends(get_current_user)):
+@router.get("/me", response_model=UserResponse)
+async def read_users_me(current_user: UserResponse = Depends(get_current_user)):
     """
     Get current authenticated user information.
     
@@ -168,7 +165,7 @@ async def read_users_me(current_user: UserRead = Depends(get_current_user)):
         current_user: Injected current user data
     
     Returns:
-        UserRead: Current user information
+        UserResponse: Current user information
     
     Raises:
         HTTPException: If user is not authenticated

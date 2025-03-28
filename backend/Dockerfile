@@ -21,17 +21,23 @@ COPY requirements.txt .
 # Install Python dependencies with increased timeout and retries
 RUN pip install --no-cache-dir --timeout 1000 --retries 3 -r requirements.txt
 
-# Install ML dependencies separately
+# Install ML dependencies separately with optimizations
 RUN pip install --no-cache-dir --timeout 1000 --retries 3 \
     dlib==19.24.0 \
     opencv-python-headless==4.8.1.78 \
     numpy==1.24.3 \
     scipy==1.11.4
 
-# Install PyTorch dependencies separately
+# Install PyTorch with CUDA support if available
+ARG CUDA_VERSION=11.8
+ARG TORCH_VERSION=2.1.2
 RUN pip install --no-cache-dir --timeout 1000 --retries 3 \
-    torch==2.1.1 \
-    torchvision==0.16.1 \
+    torch==${TORCH_VERSION}+cu${CUDA_VERSION} \
+    torchvision==0.16.1+cu${CUDA_VERSION} \
+    --extra-index-url https://download.pytorch.org/whl/cu${CUDA_VERSION}
+
+# Install face recognition
+RUN pip install --no-cache-dir --timeout 1000 --retries 3 \
     face-recognition==1.3.0
 
 # Download shape predictor model
@@ -54,7 +60,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /home/appuser/.cache && \
+    chown -R appuser:appuser /home/appuser
 
 # Set working directory
 WORKDIR /app
@@ -75,19 +83,26 @@ COPY alembic.ini /app/
 COPY healthcheck.sh /app/
 COPY entrypoint.sh /app/
 
-# Set ownership
-RUN chown -R appuser:appuser /app
+# Set ownership and permissions
+RUN chown -R appuser:appuser /app && \
+    chmod +x /app/healthcheck.sh /app/entrypoint.sh && \
+    chmod -R 755 /app/data /app/logs
 
 # Set environment variables
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 ENV ALEMBIC_CONFIG=/app/alembic.ini
+ENV HOME=/home/appuser
+ENV CUDA_VISIBLE_DEVICES=all
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # Switch to non-root user
 USER appuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+# Health check with increased timeout
+HEALTHCHECK --interval=60s --timeout=60s --start-period=30s --retries=3 \
     CMD nc -z localhost 8000 || exit 1
 
 # Set entrypoint

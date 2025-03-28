@@ -6,7 +6,7 @@ import yaml
 from fastapi import FastAPI, APIRouter
 from fastapi.openapi.utils import get_openapi
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from core.utils.decorators import handle_errors
 
 class DocumentationManager(BaseComponent):
     """API documentation management system"""

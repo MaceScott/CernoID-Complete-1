@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 import uuid
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class MessageQueue(BaseComponent):
     """Advanced message queue system"""

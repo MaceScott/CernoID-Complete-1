@@ -9,7 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, ValidationError
 
 from core.recognition.core import FaceRecognitionSystem
-from core.utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 from core.database.session import get_db_session
 from api.schemas import PersonCreate, PersonResponse, RecognitionResult
 

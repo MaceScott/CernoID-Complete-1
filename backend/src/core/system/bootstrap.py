@@ -177,3 +177,12 @@ class SystemBootstrap:
         logger.addHandler(handler)
         
         return logger 
+
+    async def _cleanup_event_bus(self) -> None:
+        """Cleanup event bus"""
+        try:
+            await self.event_bus.stop()
+            self.logger.info("Event bus cleaned up")
+        except Exception as e:
+            self.logger.error(f"Failed to cleanup event_bus: {str(e)}")
+            raise 

@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 import re
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class ValidationManager(BaseComponent):
     """Advanced validation management system"""

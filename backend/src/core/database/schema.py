@@ -7,7 +7,7 @@ from enum import Enum
 import json
 from pydantic import BaseModel, Field
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class ColumnType(str, Enum):
     """Database column types"""

@@ -5,7 +5,7 @@ import uuid
 import json
 from croniter import croniter
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class TaskScheduler(BaseComponent):
     """Advanced task scheduling system"""

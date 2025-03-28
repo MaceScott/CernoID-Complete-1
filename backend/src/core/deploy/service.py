@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 from datetime import datetime
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class ServiceManager(BaseComponent):
     """Service deployment and process management"""

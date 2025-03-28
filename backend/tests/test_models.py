@@ -1,9 +1,13 @@
 """Tests for database models."""
 import pytest
+import pytest_asyncio
 from datetime import datetime
-from core.database.models import User, FaceEncoding, AccessLog
+from src.core.database.models import User, FaceEncoding, AccessLog, Person, Camera, Recognition
+from src.core.database.base import get_session_context
+from src.core.config.settings import get_settings
 
-def test_create_user(db_session):
+@pytest.mark.asyncio
+async def test_create_user(db_session):
     """Test user creation."""
     user = User(
         username="testuser",
@@ -11,8 +15,8 @@ def test_create_user(db_session):
         hashed_password="hashedpassword123"
     )
     db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
+    await db_session.commit()
+    await db_session.refresh(user)
 
     assert user.id is not None
     assert user.username == "testuser"
@@ -23,7 +27,8 @@ def test_create_user(db_session):
     assert isinstance(user.created_at, datetime)
     assert isinstance(user.updated_at, datetime)
 
-def test_create_face_encoding(db_session):
+@pytest.mark.asyncio
+async def test_create_face_encoding(db_session):
     """Test face encoding creation."""
     # Create a user first
     user = User(
@@ -32,7 +37,7 @@ def test_create_face_encoding(db_session):
         hashed_password="hashedpassword123"
     )
     db_session.add(user)
-    db_session.commit()
+    await db_session.commit()
 
     # Create face encoding
     encoding = FaceEncoding(
@@ -40,8 +45,8 @@ def test_create_face_encoding(db_session):
         encoding_data=b"test_encoding_data"
     )
     db_session.add(encoding)
-    db_session.commit()
-    db_session.refresh(encoding)
+    await db_session.commit()
+    await db_session.refresh(encoding)
 
     assert encoding.id is not None
     assert encoding.user_id == user.id
@@ -49,7 +54,8 @@ def test_create_face_encoding(db_session):
     assert isinstance(encoding.created_at, datetime)
     assert isinstance(encoding.updated_at, datetime)
 
-def test_create_access_log(db_session):
+@pytest.mark.asyncio
+async def test_create_access_log(db_session):
     """Test access log creation."""
     # Create a user first
     user = User(
@@ -58,7 +64,7 @@ def test_create_access_log(db_session):
         hashed_password="hashedpassword123"
     )
     db_session.add(user)
-    db_session.commit()
+    await db_session.commit()
 
     # Create access log
     log = AccessLog(
@@ -68,8 +74,8 @@ def test_create_access_log(db_session):
         details={"ip": "127.0.0.1"}
     )
     db_session.add(log)
-    db_session.commit()
-    db_session.refresh(log)
+    await db_session.commit()
+    await db_session.refresh(log)
 
     assert log.id is not None
     assert log.user_id == user.id
@@ -78,7 +84,8 @@ def test_create_access_log(db_session):
     assert log.details == {"ip": "127.0.0.1"}
     assert isinstance(log.timestamp, datetime)
 
-def test_cascade_delete_user(db_session):
+@pytest.mark.asyncio
+async def test_cascade_delete_user(db_session):
     """Test that deleting a user cascades to related records."""
     # Create user
     user = User(
@@ -87,7 +94,7 @@ def test_cascade_delete_user(db_session):
         hashed_password="hashedpassword123"
     )
     db_session.add(user)
-    db_session.commit()
+    await db_session.commit()
 
     # Create face encoding
     encoding = FaceEncoding(
@@ -103,17 +110,20 @@ def test_cascade_delete_user(db_session):
         status="success"
     )
     db_session.add(log)
-    db_session.commit()
+    await db_session.commit()
 
     # Delete user
-    db_session.delete(user)
-    db_session.commit()
+    await db_session.delete(user)
+    await db_session.commit()
 
     # Verify cascade
-    assert db_session.query(FaceEncoding).filter_by(user_id=user.id).first() is None
-    assert db_session.query(AccessLog).filter_by(user_id=user.id).first() is None
+    result = await db_session.query(FaceEncoding).filter_by(user_id=user.id).first()
+    assert result is None
+    result = await db_session.query(AccessLog).filter_by(user_id=user.id).first()
+    assert result is None
 
-def test_unique_constraints(db_session):
+@pytest.mark.asyncio
+async def test_unique_constraints(db_session):
     """Test unique constraints on username and email."""
     # Create first user
     user1 = User(
@@ -122,7 +132,7 @@ def test_unique_constraints(db_session):
         hashed_password="hashedpassword123"
     )
     db_session.add(user1)
-    db_session.commit()
+    await db_session.commit()
 
     # Try to create user with same username
     with pytest.raises(Exception):
@@ -132,7 +142,7 @@ def test_unique_constraints(db_session):
             hashed_password="hashedpassword123"
         )
         db_session.add(user2)
-        db_session.commit()
+        await db_session.commit()
 
     # Try to create user with same email
     with pytest.raises(Exception):

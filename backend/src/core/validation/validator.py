@@ -11,7 +11,7 @@ from decimal import Decimal
 import uuid
 from pydantic import BaseModel, ValidationError
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 @dataclass
 class ValidationRule:

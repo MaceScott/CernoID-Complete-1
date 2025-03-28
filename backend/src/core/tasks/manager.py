@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timedelta
 import uuid
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class TaskManager(BaseComponent):
     """Advanced task management system"""

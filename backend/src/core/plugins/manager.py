@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 from abc import ABC, abstractmethod
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import pkg_resources
 
 @dataclass

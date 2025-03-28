@@ -6,7 +6,7 @@ from datetime import datetime
 import json
 from urllib.parse import urljoin
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import logging
 from pydantic import BaseModel, ValidationError
 

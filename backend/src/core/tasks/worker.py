@@ -6,7 +6,7 @@ from datetime import datetime
 import traceback
 import uuid
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class Worker:
     """Task worker"""

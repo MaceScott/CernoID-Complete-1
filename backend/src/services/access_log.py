@@ -6,7 +6,7 @@ Handles business logic for access logging and retrieval.
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import logging
-from core.utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 from core.database.session import get_db_session
 from api.schemas import AccessLog, AccessLogFilter, PaginatedResponse
 

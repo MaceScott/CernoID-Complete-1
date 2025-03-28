@@ -1,7 +1,7 @@
 from typing import Optional, Any
 import aioredis
 from aioredis import Redis
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 from .pool import ConnectionPool, T
 
 class RedisPool(ConnectionPool[Redis]):

@@ -1,9 +1,9 @@
 """Base component class."""
 from typing import Any, Dict, Optional
-from .utils.errors import handle_errors
-from .logging.base import get_logger
+import logging
+from .utils.decorators import handle_errors
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class BaseComponent:
     """Base class for all components."""
@@ -15,6 +15,8 @@ class BaseComponent:
         Args:
             config: Optional configuration dictionary
         """
+        from .logging.base import get_logger
+        
         self.config = config or {}
         self.logger = get_logger(self.__class__.__name__)
         self._initialized = False

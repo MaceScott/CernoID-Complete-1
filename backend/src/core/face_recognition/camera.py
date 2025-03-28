@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from datetime import datetime
 from ..base import BaseComponent
-from ..utils.errors import handle_errors, CameraError
+from ..utils.decorators import handle_errors, CameraError
 from .core import FaceRecognitionSystem
 
 class Camera(BaseComponent):

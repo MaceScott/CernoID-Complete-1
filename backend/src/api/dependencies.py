@@ -7,10 +7,10 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.manager import AuthManager
-from core.database.models.models import User
-from core.database.connection import db_pool
+from core.database.models import User
+from core.database import get_db
 from core.face_recognition.core import FaceRecognitionSystem
-from core.logging import get_logger
+from core.logging.base import get_logger
 
 logger = get_logger(__name__)
 
@@ -47,14 +47,6 @@ async def get_service(service_class: Type[Any]) -> AsyncGenerator[Any, None]:
         yield service
     finally:
         await service.cleanup()
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session."""
-    session = db_pool.get_session()
-    try:
-        yield session
-    finally:
-        session.close()
 
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)]

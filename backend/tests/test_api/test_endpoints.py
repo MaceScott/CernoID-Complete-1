@@ -1,9 +1,8 @@
 """Tests for API endpoints."""
 import pytest
 from fastapi.testclient import TestClient
-from src.main import app
+from core.database.models.models import User
 from src.core.security import create_access_token
-from src.core.database.models.models import User
 
 @pytest.fixture
 def client():

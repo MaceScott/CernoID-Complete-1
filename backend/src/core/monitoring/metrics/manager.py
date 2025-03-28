@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 import time
 from collections import defaultdict
 from ..base import BaseComponent
-from ..utils.errors import handle_errors, MetricsError
+from core.utils.decorators import handle_errors
+from core.monitoring.errors import MetricsError
 import importlib
 
 class MetricsManager(BaseComponent):

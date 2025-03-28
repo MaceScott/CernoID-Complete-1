@@ -44,13 +44,13 @@ from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
 from pydantic import BaseModel, Field
 
 from core.face_recognition.core import FaceRecognitionSystem
-from core.database.models import Recognition, User
-from core.database import get_db
+from core.database.models.models import Recognition, User
+from core.database.base import get_session
 from core.auth.dependencies import get_current_user, require_permissions
 from core.logging.base import get_logger
+from core.config.settings import get_settings
 
-logger = get_logger(__name__)
-
+settings = get_settings()
 router = APIRouter(prefix="/recognition", tags=["recognition"])
 
 class ImageRequest(BaseModel):
@@ -105,7 +105,7 @@ class ImageRequest(BaseModel):
 async def recognize_faces(
     request: ImageRequest,
     current_user = Depends(get_current_user),
-    db = Depends(get_db)
+    db = Depends(get_session)
 ) -> Dict[str, Any]:
     """
     Recognize faces in an image.
@@ -147,6 +147,13 @@ async def recognize_faces(
         }
     """
     try:
+        # Check if face recognition is enabled
+        if not settings.ENABLE_FACE_RECOGNITION:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Face recognition is not available"
+            )
+            
         # Validate permissions
         require_permissions(current_user, "recognition.detect")
         
@@ -174,6 +181,8 @@ async def recognize_faces(
             "processing_time": results["processing_time"]
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Face recognition failed: {str(e)}")
         raise HTTPException(
@@ -320,7 +329,7 @@ async def encode_face(
 async def match_faces(
     request: ImageRequest,
     current_user = Depends(get_current_user),
-    db = Depends(get_db)
+    db = Depends(get_session)
 ) -> Dict[str, Any]:
     """
     Match faces against the database.
@@ -401,7 +410,7 @@ async def verify_face(
     request: ImageRequest,
     person_id: str,
     current_user = Depends(get_current_user),
-    db = Depends(get_db)
+    db = Depends(get_session)
 ) -> Dict[str, Any]:
     """
     Verify a face against a claimed identity.

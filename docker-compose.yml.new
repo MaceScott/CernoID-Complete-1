@@ -1,0 +1,289 @@
+name: cernoid
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-cernoid}
+      - NEXT_TELEMETRY_DISABLED=1
+      - PRISMA_GENERATE_DATAPROXY=false
+      - PRISMA_SCHEMA_PATH=/app/prisma/schema.prisma
+    volumes:
+      - frontend_data:/app/data:rw
+      - models_data:/app/public/models:rw
+      - ./frontend/public/images:/app/public/images:ro
+      - ./frontend/public/fonts:/app/public/fonts:ro
+      - ./frontend/public/icons:/app/public/icons:ro
+      - ./frontend/public/styles:/app/public/styles:ro
+      - ./frontend/prisma:/app/prisma:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        - ENVIRONMENT=production
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-cernoid}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/${REDIS_DB:-0}
+      - JWT_SECRET=${JWT_SECRET}
+      - ENVIRONMENT=production
+      - FACE_RECOGNITION_MODEL_PATH=/app/models/face_recognition
+      - FACE_DETECTION_CONFIDENCE=0.85
+      - LOG_LEVEL=INFO
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-cernoid}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      - ALEMBIC_CONFIG=/app/alembic.ini
+      - SSL_ENABLED=true
+      - SSL_VERIFY=true
+    volumes:
+      - backend_data:/app/data:rw
+      - models_data:/app/models/face_recognition:rw
+      - ./logs:/app/logs:rw
+      - ./backend/migrations:/app/migrations:rw
+      - ./backend/src:/app/src:rw
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/healthcheck.sh"]
+      interval: 60s
+      timeout: 60s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+        reservations:
+          memory: 4G
+          cpus: '2'
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-cernoid}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-cernoid}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  monitoring:
+    image: prom/prometheus:v2.45.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.console.libraries=/usr/share/alertmanager/console_libraries'
+      - '--web.console.templates=/usr/share/alertmanager/consoles'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9100/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+  backup:
+    image: alpine:latest
+    volumes:
+      - ./scripts:/scripts
+      - backup_data:/backups
+      - postgres_data:/var/lib/postgresql/data:ro
+      - redis_data:/data:ro
+    environment:
+      - DB_USER=${DB_USER:-postgres}
+      - DB_NAME=${DB_NAME:-cernoid}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chmod +x /scripts/backup.sh && /scripts/backup.sh"]
+    healthcheck:
+      test: ["CMD", "ls", "/backups"]
+      interval: 24h
+      timeout: 10s
+      retries: 1
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging: *default-logging
+    networks:
+      - cernoid_network
+
+volumes:
+  frontend_data:
+  backend_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  models_data:
+  alertmanager_data:
+  backup_data:
+
+networks:
+  cernoid_network:
+    driver: bridge 

@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime
 import json
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import random
 from pydantic import BaseModel, ValidationError
 import logging

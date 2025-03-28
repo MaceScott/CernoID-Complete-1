@@ -13,7 +13,7 @@ WORKDIR /app
 # Set build environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max_old_space_size=2048"
+ENV NODE_OPTIONS="--max_old_space_size=4096"
 ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_FETCH_RETRIES=5
 ENV NPM_CONFIG_FETCH_RETRY_FACTOR=2
@@ -24,18 +24,18 @@ ENV NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=60000
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies with retry logic
+# Install dependencies with retry logic and strict mode
 RUN npm config set fetch-retries 5 && \
     npm config set fetch-retry-factor 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
-    npm install --legacy-peer-deps && \
-    npm install --save-dev typescript @types/react @types/node @types/lodash eslint --legacy-peer-deps
+    npm install --no-audit --no-fund && \
+    npm install --save-dev typescript @types/react @types/node @types/lodash eslint --no-audit --no-fund
 
 # Copy source code
 COPY . .
 
-# Generate Prisma client and build
+# Generate Prisma client and build with optimizations
 RUN npx prisma generate && \
     npm run build
 
@@ -56,7 +56,8 @@ RUN useradd -r -u 1001 -m nextjs && \
     chown -R nextjs:nextjs /app && \
     chmod -R 755 /app/public/models && \
     mkdir -p /home/nextjs/.npm && \
-    chown -R nextjs:nextjs /home/nextjs
+    chown -R nextjs:nextjs /home/nextjs && \
+    chmod -R 755 /home/nextjs
 
 # Copy necessary files from builder
 COPY --chown=nextjs:nextjs package*.json ./
@@ -71,6 +72,8 @@ COPY --chown=nextjs:nextjs --from=builder /app/package.json ./
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOME=/home/nextjs
+ENV NODE_OPTIONS="--max_old_space_size=4096"
+ENV NEXT_RUNTIME=standalone
 
 # Switch to non-root user
 USER nextjs
@@ -78,9 +81,9 @@ USER nextjs
 # Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+# Health check with increased timeout
+HEALTHCHECK --interval=60s --timeout=60s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Start the application
+# Start the application with production optimizations
 CMD ["npm", "start"] 

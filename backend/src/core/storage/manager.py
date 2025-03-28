@@ -10,7 +10,7 @@ from pathlib import Path
 import mimetypes
 import importlib
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class StorageManager(BaseComponent):
     """Advanced storage management system"""

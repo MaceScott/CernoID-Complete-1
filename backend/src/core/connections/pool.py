@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 T = TypeVar('T')
 

@@ -3,7 +3,7 @@ import inspect
 from functools import partial
 import asyncio
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class DIContainer(BaseComponent):
     """Advanced dependency injection container"""

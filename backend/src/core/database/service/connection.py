@@ -12,7 +12,7 @@ import os
 
 from ...utils.logging import get_logger
 from ...utils.config import get_settings
-from ...utils.errors import handle_errors
+from ...utils.decorators import handle_errors
 
 logger = get_logger(__name__)
 

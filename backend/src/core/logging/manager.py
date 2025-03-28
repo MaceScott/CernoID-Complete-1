@@ -16,7 +16,7 @@ import aioredis
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 import structlog
 from pythonjsonlogger import jsonlogger
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 @dataclass
 class LogConfig:

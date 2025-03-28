@@ -5,6 +5,8 @@ User model for authentication and user management.
 from typing import List, Optional
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Table
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..base import Base
 
@@ -37,6 +39,13 @@ class User(Base):
     access_points = relationship('AccessPoint', back_populates='creator')
     assigned_alerts = relationship('Alert', foreign_keys='Alert.assigned_to', back_populates='assigned_user')
     created_alerts = relationship('Alert', foreign_keys='Alert.created_by', back_populates='creator')
+
+    @classmethod
+    async def get_by_username(cls, username: str, db: AsyncSession) -> Optional['User']:
+        """Get user by username (email)."""
+        query = select(cls).where(cls.email == username)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
 
     def has_permission(self, permission: str) -> bool:
         """Check if user has a specific permission."""

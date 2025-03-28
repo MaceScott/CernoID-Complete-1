@@ -12,7 +12,7 @@ import ipaddress
 from dataclasses import dataclass
 from enum import Enum
 from email_validator import validate_email, EmailNotValidError
-from ..utils.errors import handle_errors, ValidationError
+from ..utils.decorators import handle_errors, ValidationError
 
 T = TypeVar('T')
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import aiosmtplib
 from jinja2 import Template
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class EmailManager(BaseComponent):
     """Advanced email management system"""

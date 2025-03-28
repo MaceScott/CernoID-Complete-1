@@ -3,7 +3,7 @@ import asyncio
 import inspect
 from datetime import datetime
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 from ..logging import get_logger
 
 logger = get_logger(__name__)

@@ -10,6 +10,7 @@ import logging
 from enum import Enum
 from functools import lru_cache
 import ast
+from pathlib import Path
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -33,13 +34,22 @@ class Settings(BaseSettings):
     ENVIRONMENT: Environment = Environment.DEVELOPMENT
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
+    TESTING: bool = False  # Flag for test environment
     
     # Application settings
     APP_NAME: str = "CernoID"
     APP_DESCRIPTION: str = "Advanced Face Recognition System"
     APP_VERSION: str = "1.0.0"
-    API_V1_PREFIX: str = "/api/v1"
+    API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "CernoID API"
+    VERSION: str = "1.0.0"
+    DESCRIPTION: str = "Advanced Face Recognition System"
+
+    # Feature flags
+    ENABLE_FACE_RECOGNITION: bool = True
+    ENABLE_SYSTEM_MONITORING: bool = True
+    USE_GPU: bool = False
+    MODEL_PATH: str = "models"
 
     # Database settings
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/cernoid"
@@ -53,6 +63,7 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_PASSWORD: str = "redis_password"
 
     @computed_field
     def REDIS_URL(self) -> str:
@@ -74,7 +85,7 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
 
     # Face recognition settings
-    FACE_RECOGNITION_MODEL: str = "hog"
+    FACE_RECOGNITION_MODEL: str = "face_recognition_model"
     MIN_FACE_CONFIDENCE: float = 0.6
     FACE_ENCODING_BATCH_SIZE: int = 32
     FACE_RECOGNITION_TOLERANCE: float = 0.6
@@ -115,18 +126,35 @@ class Settings(BaseSettings):
     RECOGNITION_ACTIVATION_RANGE: float = 2.0  # meters
     RECOGNITION_LONG_RANGE_THRESHOLD: float = 5.0  # meters
 
-@lru_cache()
+    # Test mode flag
+    TESTING: bool = False
+    
+    # Model paths and configurations
+    GPU_DEVICE: str = "cuda:0"
+    FACE_DETECTION_MODEL: str = "face_detection_model"
+
+class TestSettings(Settings):
+    """Test settings."""
+    DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
+    DEBUG: bool = True
+    TESTING: bool = True
+    DB_ECHO: bool = True
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
+    ENABLE_FACE_RECOGNITION: bool = False
+    USE_GPU: bool = False
+    MODEL_PATH: str = "test_models"
+    API_V1_STR: str = "/api/v1"
+    VERSION: str = "1.0.0"
+    DESCRIPTION: str = "Advanced Face Recognition System"
+
+@lru_cache
 def get_settings() -> Settings:
-    """Get cached settings instance"""
-    try:
-        settings = Settings()
-        logger.info(f"Loaded settings for environment: {settings.ENVIRONMENT}")
-        return settings
-    except Exception as e:
-        logger.error(f"Failed to load settings: {str(e)}")
-        raise
+    """Get settings instance with environment variables."""
+    if os.getenv("TESTING"):
+        return TestSettings()
+    return Settings()
 
-# Create global settings instance
-settings = get_settings()
-
-__all__ = ['Settings', 'settings', 'Environment']
+__all__ = ['Settings', 'get_settings', 'Environment']

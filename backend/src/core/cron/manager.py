@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timedelta
 import croniter
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class CronManager(BaseComponent):
     """Advanced cron job management system"""

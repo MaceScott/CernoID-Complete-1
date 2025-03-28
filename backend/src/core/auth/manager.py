@@ -11,12 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 import logging
 
-from core.config import Settings
+from core.config import Settings, get_settings
 from core.database.models.models import User
 from .schemas import TokenData
 from .service import AuthService
 
-settings = Settings()
+settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class AuthManager:
     def __init__(self):
         if not hasattr(self, '_initialized'):
             self._initialized = True
-            self._auth_service = AuthService()
+            self._auth_service = AuthService(settings)
         self.secret_key = settings.SECRET_KEY
         self.algorithm = settings.ALGORITHM
         self.access_token_expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES

@@ -40,7 +40,12 @@ class MetricsCollector:
             # Connect to Redis
             self._redis = Redis.from_url(
                 self.settings.REDIS_URL,
-                decode_responses=True
+                decode_responses=True,
+                username=None,  # Redis doesn't use username
+                password=self.settings.REDIS_PASSWORD,
+                socket_timeout=5.0,
+                socket_connect_timeout=5.0,
+                retry_on_timeout=True
             )
             await self._redis.ping()
             

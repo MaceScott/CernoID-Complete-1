@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 from enum import Enum
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import os
 import psutil
 import platform
@@ -12,6 +12,7 @@ from ..logging import get_logger
 from fastapi import APIRouter, Depends
 from core.system.bootstrap import SystemBootstrap
 from core.monitoring.system.manager import SystemManager
+from pydantic import BaseModel
 
 logger = get_logger(__name__)
 
@@ -410,55 +411,53 @@ class HealthCheck(BaseComponent):
             'timestamp': datetime.utcnow().isoformat()
         }
 
+# Create router
 router = APIRouter()
 
-@router.get("/health")
+# Create response models
+class HealthCheckResponse(BaseModel):
+    """Health check response model"""
+    status: str
+    details: Dict[str, Any]
+    timestamp: str
+
+class ReadinessCheckResponse(BaseModel):
+    """Readiness check response model"""
+    status: str
+    details: Dict[str, Any]
+    timestamp: str
+
+# Create dependencies
+async def get_system_bootstrap() -> SystemBootstrap:
+    """Get system bootstrap instance"""
+    return SystemBootstrap()
+
+async def get_system_manager() -> SystemManager:
+    """Get system manager instance"""
+    return SystemManager({})
+
+@router.get("/health", response_model=HealthCheckResponse)
 async def health_check(
-    system: SystemBootstrap = Depends(),
-    system_manager: SystemManager = Depends()
+    system: SystemBootstrap = Depends(get_system_bootstrap),
+    system_manager: SystemManager = Depends(get_system_manager)
 ) -> Dict[str, Any]:
     """Health check endpoint"""
-    try:
-        # Get system health status
-        health_status = await system.check_health()
-        
-        # Get component health
-        component_health = await system_manager.get_component_status()
-        
-        return {
-            "status": "healthy" if health_status["healthy"] else "unhealthy",
-            "components": component_health,
-            "details": health_status["details"]
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+    health_status = await system.check_health()
+    return {
+        "status": "healthy" if health_status["healthy"] else "unhealthy",
+        "details": health_status["details"],
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
-@router.get("/ready")
+@router.get("/ready", response_model=ReadinessCheckResponse)
 async def readiness_check(
-    system: SystemBootstrap = Depends(),
-    system_manager: SystemManager = Depends()
+    system: SystemBootstrap = Depends(get_system_bootstrap),
+    system_manager: SystemManager = Depends(get_system_manager)
 ) -> Dict[str, Any]:
     """Readiness check endpoint"""
-    try:
-        # Check if system is ready to accept traffic
-        health_status = await system.check_health()
-        component_health = await system_manager.get_component_status()
-        
-        # System is ready if all critical components are healthy
-        is_ready = all(
-            status == "healthy" 
-            for status in component_health.values()
-        )
-        
-        return {
-            "status": "ready" if is_ready else "not_ready",
-            "components": component_health
-        }
-    except Exception as e:
-        return {
-            "status": "not_ready",
-            "error": str(e)
-        } 
+    health_status = await system.check_health()
+    return {
+        "status": "ready" if health_status["healthy"] else "not_ready",
+        "details": health_status["details"],
+        "timestamp": datetime.utcnow().isoformat()
+    } 

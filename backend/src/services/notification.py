@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 import aiosmtplib
 import httpx
 from core.config.settings import get_settings
-from core.utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 import asyncio
 import json
 import firebase_admin

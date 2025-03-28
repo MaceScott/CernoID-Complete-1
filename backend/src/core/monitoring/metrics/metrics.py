@@ -8,7 +8,7 @@ from prometheus_client import (
     CollectorRegistry, multiprocess, generate_latest
 )
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from core.utils.decorators import handle_errors
 
 @dataclass
 class SystemMetrics:

@@ -8,10 +8,12 @@ import bcrypt
 import logging
 from fastapi import HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
-from ..database import db_pool
-from ..base import BaseComponent
+from core.config.settings import get_settings
+from core.database.models.models import User
+from core.base import BaseComponent
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +26,12 @@ class TokenData(BaseModel):
 
 class AuthService(BaseComponent):
     """Authentication service."""
-    _instance = None
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if not hasattr(self, '_initialized'):
-            super().__init__(settings.dict())
-            self._initialized = True
-            self._secret_key = settings.SECRET_KEY
-            self._algorithm = settings.ALGORITHM
-            self._access_token_expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    def __init__(self, settings):
+        super().__init__(settings.dict())
+        self._secret_key = settings.SECRET_KEY
+        self._algorithm = settings.ALGORITHM
+        self._access_token_expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
     async def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify password."""
@@ -59,11 +53,14 @@ class AuthService(BaseComponent):
                 detail="Failed to hash password"
             )
 
-    async def create_access_token(self, data: Dict[str, Any]) -> str:
+    def create_access_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
         """Create access token."""
         try:
             to_encode = data.copy()
-            expire = datetime.utcnow() + timedelta(minutes=self._access_token_expire_minutes)
+            if expires_delta:
+                expire = datetime.utcnow() + expires_delta
+            else:
+                expire = datetime.utcnow() + timedelta(minutes=self._access_token_expire_minutes)
             to_encode.update({"exp": expire})
             encoded_jwt = jwt.encode(to_encode, self._secret_key, algorithm=self._algorithm)
             return encoded_jwt
@@ -102,44 +99,23 @@ class AuthService(BaseComponent):
                 detail="Failed to verify token"
             )
 
-    async def authenticate_user(self, username: str, password: str) -> Dict[str, Any]:
+    async def authenticate_user(self, username: str, password: str, db: AsyncSession) -> Optional[User]:
         """Authenticate user."""
         try:
             # Get user from database
-            query = "SELECT id, username, password, role FROM users WHERE username = $1"
-            user = await db_pool.fetchrow(query, username)
+            query = select(User).where(User.email == username)
+            result = await db.execute(query)
+            user = result.scalar_one_or_none()
             
             if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Incorrect username or password"
-                )
+                return None
             
             # Verify password
-            if not await self.verify_password(password, user['password']):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Incorrect username or password"
-                )
+            if not await self.verify_password(password, user.hashed_password):
+                return None
             
-            # Create access token
-            access_token = await self.create_access_token({
-                "user_id": user['id'],
-                "username": user['username'],
-                "role": user['role']
-            })
-            
-            return {
-                "access_token": access_token,
-                "token_type": "bearer",
-                "user": {
-                    "id": user['id'],
-                    "username": user['username'],
-                    "role": user['role']
-                }
-            }
-        except HTTPException:
-            raise
+            return user
+
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
             raise HTTPException(

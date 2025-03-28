@@ -12,7 +12,7 @@ from ..schemas import (
     PaginatedResponse,
     ErrorResponse
 )
-from src.core.utils.errors import handle_errors
+from core.utils.decorators import handle_errors
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 

@@ -3,7 +3,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware"""

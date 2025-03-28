@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from ..base import BaseComponent
-from ..utils.errors import handle_errors
+from ..utils.decorators import handle_errors
 
 class DeploymentManager(BaseComponent):
     """Deployment and environment management"""

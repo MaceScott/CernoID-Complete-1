@@ -4,7 +4,8 @@ import psutil
 from datetime import datetime
 from collections import defaultdict
 from ...base import BaseComponent
-from ..utils.errors import handle_errors, MetricsError
+from core.utils.decorators import handle_errors
+from core.monitoring.errors import MetricsError
 
 class MemoryMetrics(BaseComponent):
     """Memory metrics collector"""
