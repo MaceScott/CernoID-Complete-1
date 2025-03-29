@@ -11,3 +11,5 @@ DATABASE_CONFIG:
 LOGS_PATH: "logs/app.log"
 
 IMAGE_FOLDER: "test_images"  # Path to image directory
+
+SHAPE_PREDICTOR_MODEL: "${SHAPE_PREDICTOR_MODEL}"

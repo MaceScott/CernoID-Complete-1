@@ -6,8 +6,8 @@ import os
 import logging
 from pathlib import Path
 
-# Load the pre-trained shape predictor model
-PREDICTOR_PATH = os.getenv("SHAPE_PREDICTOR_PATH", "/app/models/shape_predictor_68_face_landmarks.dat")
+# Update shape predictor path to use environment variable
+PREDICTOR_PATH = os.getenv("SHAPE_PREDICTOR_MODEL", "/app/models/shape_predictor_68_face_landmarks.dat")
 
 # Initialize dlib's face detector and shape predictor
 face_detector = dlib.get_frontal_face_detector()

@@ -72,7 +72,7 @@ settings = get_settings()
 # Model paths and URLs
 CASCADE_PATH = "/app/models/haarcascade_frontalface_default.xml"
 DLIB_FACE_RECOGNITION_MODEL_PATH = "/app/models/dlib_face_recognition_resnet_model_v1.dat"
-DLIB_SHAPE_PREDICTOR_PATH = "/app/models/shape_predictor_68_face_landmarks.dat"
+DLIB_SHAPE_PREDICTOR_PATH = os.getenv("SHAPE_PREDICTOR_MODEL", "/app/models/shape_predictor_68_face_landmarks.dat")
 
 # Model download URLs
 DLIB_FACE_RECOGNITION_MODEL_URL = "https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2"
