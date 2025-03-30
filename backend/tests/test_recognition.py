@@ -7,8 +7,12 @@ import cv2
 import numpy as np
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+# Import mock dlib before any other imports
+from tests.fixtures.mock_dlib import mock_dlib
+
 from src.core.config.settings import get_settings
-from src.core.recognition import FaceRecognitionSystem
+from src.core.face_recognition import FaceRecognitionSystem
 from src.main import app
 from src.core.security import create_access_token
 from src.core.database.models import User, Person, FaceEncoding
@@ -27,56 +31,6 @@ async def admin_headers():
     token = create_access_token({"sub": "admin", "is_superuser": True})
     return {"Authorization": f"Bearer {token}"}
 
-@pytest_asyncio.fixture(autouse=True)
-async def setup_recognition():
-    """Setup face recognition for tests."""
-    settings = get_settings()
-    
-    # Store original settings
-    original_enabled = settings.ENABLE_FACE_RECOGNITION
-    original_gpu = settings.USE_GPU
-    original_testing = settings.TESTING
-    
-    # Disable face recognition in test environment
-    settings.ENABLE_FACE_RECOGNITION = False
-    settings.USE_GPU = False
-    settings.TESTING = True
-    
-    yield
-    
-    # Restore original settings
-    settings.ENABLE_FACE_RECOGNITION = original_enabled
-    settings.USE_GPU = original_gpu
-    settings.TESTING = original_testing
-
-@pytest_asyncio.fixture
-async def test_person(db_session):
-    """Create a test person."""
-    person = Person(
-        full_name="Test Person",
-        email="person@example.com",
-        phone="+1234567890",
-        department="IT",
-        position="Developer",
-        active=True
-    )
-    db_session.add(person)
-    await db_session.commit()
-    await db_session.refresh(person)
-    return person
-
-@pytest_asyncio.fixture
-async def test_face_encoding(db_session, test_person):
-    """Create a test face encoding."""
-    encoding = FaceEncoding(
-        person_id=test_person.id,
-        encoding_data=np.random.rand(128).tobytes()
-    )
-    db_session.add(encoding)
-    await db_session.commit()
-    await db_session.refresh(encoding)
-    return encoding
-
 @pytest.fixture
 def test_image():
     """Create a test image."""
@@ -92,38 +46,82 @@ def test_image_file(tmp_path):
     cv2.imwrite(str(img_path), img)
     return img_path
 
+@pytest.mark.asyncio
+async def test_recognize_face(client, auth_headers, test_image_file):
+    """Test face recognition endpoint."""
+    # Read the test image
+    with open(test_image_file, "rb") as f:
+        image_data = f.read()
+    
+    # Encode the image as base64
+    image_base64 = base64.b64encode(image_data).decode()
+    
+    # Make the request
+    response = await client.post(
+        "/api/v1/recognition/recognize",
+        headers=auth_headers,
+        json={"image_data": image_base64}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "faces" in data
+    assert isinstance(data["faces"], list)
+
+@pytest.mark.asyncio
+async def test_unauthorized_access(client):
+    """Test unauthorized access to recognition endpoint."""
+    response = await client.post(
+        "/api/v1/recognition/recognize",
+        json={"image_data": "test"}
+    )
+    assert response.status_code == 401
+
+@pytest.mark.asyncio
+async def test_invalid_image(client, auth_headers):
+    """Test recognition with invalid image data."""
+    response = await client.post(
+        "/api/v1/recognition/recognize",
+        headers=auth_headers,
+        json={"image_data": "invalid_base64"}
+    )
+    assert response.status_code == 400
+
+@pytest.mark.asyncio
 async def test_recognize_faces(client, auth_headers, test_image):
     """Test face recognition endpoint."""
     _, img_encoded = cv2.imencode('.jpg', test_image)
     img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
     
     response = await client.post(
-        "/api/recognition/recognize",
+        "/api/v1/recognition/recognize",
         headers=auth_headers,
-        json={"image": img_base64}
+        json={"image_data": img_base64}
     )
     assert response.status_code == 200
     data = response.json()
     assert "faces" in data
     assert isinstance(data["faces"], list)
 
+@pytest.mark.asyncio
 async def test_recognize_faces_unauthorized(client, test_image):
     """Test face recognition without authentication."""
     _, img_encoded = cv2.imencode('.jpg', test_image)
     img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
     
     response = await client.post(
-        "/api/recognition/recognize",
-        json={"image": img_base64}
+        "/api/v1/recognition/recognize",
+        json={"image_data": img_base64}
     )
     assert response.status_code == 401
 
+@pytest.mark.asyncio
 async def test_recognize_file(client, auth_headers, test_image_file):
     """Test face recognition with file upload."""
     with open(test_image_file, "rb") as f:
         files = {"file": ("test.jpg", f, "image/jpeg")}
         response = await client.post(
-            "/api/recognition/recognize-file",
+            "/api/v1/recognition/recognize",
             headers=auth_headers,
             files=files
         )
@@ -132,27 +130,18 @@ async def test_recognize_file(client, auth_headers, test_image_file):
     assert "faces" in data
     assert isinstance(data["faces"], list)
 
-async def test_recognize_invalid_image(client, auth_headers):
-    """Test face recognition with invalid image."""
-    response = await client.post(
-        "/api/recognition/recognize",
-        headers=auth_headers,
-        json={"image": "invalid_base64"}
-    )
-    assert response.status_code == 400
-    assert "detail" in response.json()
-
+@pytest.mark.asyncio
 async def test_recognize_with_high_confidence(client, auth_headers, test_image):
     """Test face recognition with high confidence threshold."""
     _, img_encoded = cv2.imencode('.jpg', test_image)
     img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
     
     response = await client.post(
-        "/api/recognition/recognize",
+        "/api/v1/recognition/recognize",
         headers=auth_headers,
         json={
-            "image": img_base64,
-            "confidence_threshold": 0.9
+            "image_data": img_base64,
+            "min_confidence": 0.9
         }
     )
     assert response.status_code == 200
@@ -160,30 +149,32 @@ async def test_recognize_with_high_confidence(client, auth_headers, test_image):
     assert "faces" in data
     assert isinstance(data["faces"], list)
 
+@pytest.mark.asyncio
 async def test_search_faces(client, auth_headers, test_image):
     """Test face search endpoint."""
     _, img_encoded = cv2.imencode('.jpg', test_image)
     img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
     
     response = await client.post(
-        "/api/recognition/search",
+        "/api/v1/recognition/search",
         headers=auth_headers,
-        json={"image": img_base64}
+        json={"image_data": img_base64}
     )
     assert response.status_code == 200
     data = response.json()
     assert "matches" in data
     assert isinstance(data["matches"], list)
 
+@pytest.mark.asyncio
 async def test_face_detection(client, auth_headers, test_image):
     """Test face detection endpoint."""
     _, img_encoded = cv2.imencode('.jpg', test_image)
     img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
     
     response = await client.post(
-        "/api/recognition/detect",
+        "/api/v1/recognition/detect",
         headers=auth_headers,
-        json={"image": img_base64}
+        json={"image_data": img_base64}
     )
     assert response.status_code == 200
     data = response.json()

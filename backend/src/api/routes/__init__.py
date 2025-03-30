@@ -33,7 +33,7 @@ main_router.include_router(
 )
 
 # Export the main router
-router = main_router
+api_router = main_router
 
 @main_router.get("/health", tags=["system"])
 async def health_check():

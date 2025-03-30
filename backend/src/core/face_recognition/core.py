@@ -57,6 +57,12 @@ import os
 import json
 import urllib.request
 
+# Import mock dlib for testing
+try:
+    from tests.fixtures.mock_dlib import mock_dlib
+except ImportError:
+    mock_dlib = None
+
 from core.utils.decorators import handle_errors
 from core.config.settings import get_settings
 from gtts import gTTS
@@ -81,8 +87,7 @@ DLIB_SHAPE_PREDICTOR_URL = "https://github.com/davisking/dlib-models/raw/master/
 # Prevent GPU initialization in test mode
 if settings.TESTING:
     settings.USE_GPU = False
-    settings.ENABLE_FACE_RECOGNITION = False
-    logger.info("Running in test mode, GPU and face recognition disabled")
+    logger.info("Running in test mode, GPU disabled")
 
 @dataclass
 class FaceFeatures:
@@ -171,8 +176,8 @@ class FaceRecognitionSystem(BaseComponent):
             self.device = "cpu"  # Always use CPU in test environment
             self.logger.info(f"Using device: {self.device}")
             
-            # Initialize caches
-            self._encoding_cache = None
+            # Initialize caches with size limits
+            self._encoding_cache = TTLCache(maxsize=1000, ttl=3600)  # 1 hour TTL
             self._detector = None
             self._encoder = None
             self._landmark_detector = None
@@ -213,22 +218,36 @@ class FaceRecognitionSystem(BaseComponent):
                 self.logger.info("Face recognition is disabled")
                 return
             
-            # Check if we're in test mode
-            if settings.TESTING:
-                self.logger.info("Running in test mode, skipping initialization")
-                return
-            
             # Initialize components
-            await self._download_and_prepare_models()
-            await self._init_detector()
-            await self._init_encoder()
-            await self._init_landmark_detector()
-            
-            self.logger.info("Face recognition system initialized successfully")
+            if settings.TESTING:
+                # In test mode, use mock components
+                self._detector = mock_dlib._face_detector
+                self._encoder = mock_dlib._face_recognition_model
+                self._landmark_detector = mock_dlib._shape_predictor
+                self.logger.info("Initialized face recognition system with mock components")
+            else:
+                # In production mode, initialize real components
+                await self._download_and_prepare_models()
+                await self._init_detector()
+                await self._init_encoder()
+                await self._init_landmark_detector()
+                self.logger.info("Face recognition system initialized successfully")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize face recognition system: {e}")
             raise
+
+    def _check_memory_usage(self):
+        """Monitor memory usage and clear caches if needed."""
+        try:
+            if GPUtil.getGPUs():
+                gpu = GPUtil.getGPUs()[0]
+                if gpu.memoryUtil > 0.8:  # 80% memory usage
+                    self.logger.warning("High GPU memory usage detected, clearing caches")
+                    self.clear_caches()
+                    torch.cuda.empty_cache()
+        except Exception as e:
+            self.logger.error(f"Error checking memory usage: {e}")
 
     async def _do_cleanup(self) -> None:
         """Clean up face recognition system resources."""
@@ -253,6 +272,10 @@ class FaceRecognitionSystem(BaseComponent):
             self._detector = None
             self._encoder = None
             self._landmark_detector = None
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
             
         except Exception as e:
             self.logger.error(f"Error cleaning up face recognition system: {e}")
@@ -390,10 +413,6 @@ class FaceRecognitionSystem(BaseComponent):
             # Check if face recognition is enabled
             if not settings.ENABLE_FACE_RECOGNITION:
                 raise RuntimeError("Face recognition is not available")
-            
-            # Check if we're in test mode
-            if settings.TESTING:
-                raise RuntimeError("Face recognition is not available in test mode")
             
             start_time = datetime.utcnow()
             

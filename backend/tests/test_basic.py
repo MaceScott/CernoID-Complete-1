@@ -3,6 +3,11 @@ import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock
 
+# Import required fixtures
+from .fixtures.db import db_session
+from .fixtures.api_conftest import app, event_loop
+from .fixtures.face_recognition import face_recognition_system
+
 @pytest.mark.asyncio
 async def test_async():
     """Test that async tests work."""

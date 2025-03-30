@@ -8,25 +8,13 @@ from functools import lru_cache
 
 logging.basicConfig(level=logging.INFO)
 
-# Get the absolute path to config.yaml
-config_path = os.path.abspath("config/config.yaml")
-
-# Load YAML file
-try:
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-except FileNotFoundError:
-    raise FileNotFoundError(f"Configuration file not found at {config_path}")
-except yaml.YAMLError as e:
-    raise ValueError(f"Error parsing YAML file: {e}")
-
-# Extract values safely
-try:
-    SHAPE_PREDICTOR_PATH = config["SHAPE_PREDICTOR_PATH"]
-    IMAGE_FOLDER = config["IMAGE_FOLDER"]
-    DATABASE_CONFIG = config["DATABASE_CONFIG"]
-except KeyError as e:
-    raise KeyError(f"Missing required configuration key: {e}")
+# Get configuration from environment variables
+SHAPE_PREDICTOR_PATH = os.getenv("SHAPE_PREDICTOR_MODEL", "models/shape_predictor_68_face_landmarks.dat")
+IMAGE_FOLDER = os.getenv("MODEL_PATH", "models")
+DATABASE_CONFIG = {
+    "url": os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db"),
+    "echo": os.getenv("DATABASE_ECHO", "false").lower() == "true"
+}
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +42,7 @@ def detect_faces(image_path):
 
 
 if __name__ == "__main__":
-    # Use dynamically resolved paths from `config.py` for portability
+    # Use environment variables for paths
     test_image_path = Path(IMAGE_FOLDER) / "test.jpg"
     if not test_image_path.exists():
         raise FileNotFoundError(f"Test image not found at {test_image_path}")
