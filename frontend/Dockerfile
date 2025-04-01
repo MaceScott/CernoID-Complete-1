@@ -1,89 +1,52 @@
 # Build stage
-FROM node:18.19-slim AS builder
+FROM node:18-alpine AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
+# Set working directory
 WORKDIR /app
-
-# Set build environment variables
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max_old_space_size=4096"
-ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
-ENV NPM_CONFIG_FETCH_RETRIES=5
-ENV NPM_CONFIG_FETCH_RETRY_FACTOR=2
-ENV NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=10000
-ENV NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=60000
 
 # Copy package files
 COPY package*.json ./
-COPY prisma ./prisma/
 
-# Install dependencies with retry logic and strict mode
-RUN npm config set fetch-retries 5 && \
-    npm config set fetch-retry-factor 5 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm install --no-audit --no-fund && \
-    npm install --save-dev typescript @types/react @types/node @types/lodash eslint --no-audit --no-fund
+# Install dependencies
+RUN npm ci
 
 # Copy source code
 COPY . .
 
-# Generate Prisma client and build with optimizations
-RUN npx prisma generate && \
-    npm run build
+# Build application
+RUN npm run build
 
 # Production stage
-FROM node:18.19-slim AS runner
+FROM node:18-alpine AS runner
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    netcat-traditional \
-    && rm -rf /var/lib/apt/lists/*
-
+# Set working directory
 WORKDIR /app
 
-# Create non-root user and set up home directory
-RUN useradd -r -u 1001 -m nextjs && \
-    mkdir -p /app/data /app/public /app/public/models && \
-    chown -R nextjs:nextjs /app && \
-    chmod -R 755 /app/public/models && \
-    mkdir -p /home/nextjs/.npm && \
-    chown -R nextjs:nextjs /home/nextjs && \
-    chmod -R 755 /home/nextjs
+# Install production dependencies only
+COPY --from=builder /app/package*.json ./
+RUN npm ci --only=production
 
-# Copy necessary files from builder
-COPY --chown=nextjs:nextjs package*.json ./
-COPY --chown=nextjs:nextjs prisma ./prisma/
-COPY --chown=nextjs:nextjs --from=builder /app/.next ./.next
-COPY --chown=nextjs:nextjs --from=builder /app/public ./public
-COPY --chown=nextjs:nextjs --from=builder /app/node_modules ./node_modules
-COPY --chown=nextjs:nextjs --from=builder /app/next.config.js ./
-COPY --chown=nextjs:nextjs --from=builder /app/package.json ./
+# Copy built application
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/healthcheck.sh ./
+
+# Make healthcheck script executable
+RUN chmod +x /app/healthcheck.sh
 
 # Set environment variables
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV HOME=/home/nextjs
-ENV NODE_OPTIONS="--max_old_space_size=4096"
-ENV NEXT_RUNTIME=standalone
-
-# Switch to non-root user
-USER nextjs
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
 
 # Expose port
 EXPOSE 3000
 
-# Health check with increased timeout
-HEALTHCHECK --interval=60s --timeout=60s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+# Set healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD /app/healthcheck.sh
 
-# Start the application with production optimizations
+# Start the application
 CMD ["npm", "start"] 

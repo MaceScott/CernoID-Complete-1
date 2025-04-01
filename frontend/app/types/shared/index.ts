@@ -37,6 +37,7 @@ export interface ErrorResponse {
 export interface WebSocketMessage {
   type: string;
   payload: any;
+  data?: unknown;
 }
 
 export interface WebSocketState {

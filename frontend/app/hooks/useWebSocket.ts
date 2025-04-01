@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
-interface WebSocketMessage {
-  type: string;
-  data: unknown;
-}
+import { WebSocketMessage } from '@/types/shared';
 
 interface WebSocketHookOptions {
   url?: string;
@@ -48,7 +44,7 @@ export function useWebSocket({
             const data = JSON.parse(event.data);
             onMessage?.(data);
           } catch (err) {
-            onMessage?.({ type: 'raw', data: event.data });
+            onMessage?.({ type: 'raw', payload: event.data });
           }
         };
 
@@ -105,7 +101,7 @@ export function useWebSocketMessage<T>(messageType: string, url = process.env.NE
     url,
     onMessage: (data) => {
       if (data.type === messageType) {
-        setLastMessage(data.data as T);
+        setLastMessage(data.payload as T);
       }
     },
   });

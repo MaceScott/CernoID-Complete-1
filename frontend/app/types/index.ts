@@ -16,7 +16,6 @@ export type {
 // Re-export other types
 export * from './auth';
 export * from './features/settings';
-export * from './config';
 
 // Theme type
 export type Theme = 'light' | 'dark';
