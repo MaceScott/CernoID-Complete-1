@@ -1,0 +1,88 @@
+name: Validate Environment Variables
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydantic-settings python-dotenv
+
+      - name: Validate backend environment
+        run: |
+          python -c "
+          from pydantic_settings import BaseSettings
+          from pathlib import Path
+          import os
+          
+          # Load example environment
+          from dotenv import load_dotenv
+          load_dotenv('backend/.env.example')
+          
+          # Validate settings
+          from app.core.config import Settings
+          settings = Settings()
+          settings.validate()
+          print('Backend environment validation passed')
+          "
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Validate frontend environment
+        run: |
+          cd frontend
+          # Load example environment
+          cp .env.example .env
+          # Run type checking
+          npm run type-check
+
+      - name: Validate Docker environment
+        run: |
+          # Load example environment
+          cp .env.example .env
+          # Validate docker-compose
+          docker-compose config
+
+      - name: Check for sensitive data
+        run: |
+          # Check for hardcoded secrets
+          if grep -r "password\|secret\|key\|token" . --exclude-dir={.git,node_modules,venv} | grep -v "example\|test"; then
+            echo "Warning: Potential sensitive data found in code"
+            exit 1
+          fi
+
+      - name: Validate secrets management
+        run: |
+          python -c "
+          from app.core.secrets import SecretsManager
+          import os
+          
+          # Test secrets manager
+          manager = SecretsManager()
+          test_secret = 'test_secret_value'
+          manager.set_secret('TEST_SECRET', test_secret)
+          assert manager.get_secret('TEST_SECRET') == test_secret
+          print('Secrets management validation passed')
+          " 
