@@ -1,0 +1,36 @@
+[bandit]
+exclude_dirs = tests,venv,.venv,env,.env,migrations
+skips = B101,B104,B311
+
+[bandit.assert_used]
+skips = */test_*.py
+
+[bandit.hardcoded_bind_all_interfaces]
+skips = src/main.py
+
+[bandit.hardcoded_password]
+function_names = subprocess.Popen,subprocess.call,subprocess.run
+
+[bandit.hardcoded_tmp_directory]
+tmp_dirs = /tmp,/var/tmp,/dev/shm
+
+[bandit.start_process_with_no_shell]
+subprocess_popen_with_shell_equals_true = false
+
+[bandit.start_process_with_partial_path]
+subprocess_popen_with_run_as_root = false
+
+[bandit.blacklist_imports]
+bad_import_sets = pickle:pickle,cPickle;subprocess:subprocess;cryptography:cryptography
+
+[bandit.blacklist_calls]
+bad_name_sets = pickle:pickle.loads,pickle.dumps,pickle.load,pickle.dump;subprocess:subprocess.Popen,subprocess.call,subprocess.run,subprocess.check_output,subprocess.check_call;yaml:yaml.load,yaml.load_all
+
+[bandit.blacklist_imports_cont]
+bad_import_sets = telnetlib:telnetlib;ftplib:ftplib
+
+[bandit.shell_injection]
+subprocess_without_shell_equals_true = false
+shell_injection_wrappers = os.system,os.popen,os.popen2,os.popen3,os.popen4,popen2.popen2,popen2.popen3,popen2.popen4,popen2.Popen3,popen2.Popen4,commands.getoutput,commands.getstatusoutput
+shell_injection_wrappers_not = 
+shell_injection_sys_commands = make,make_output,make_error,make_all,make_targets,make_clean 
