@@ -1,9 +1,3 @@
-{
-  "devDependencies": {
-    "@types/lodash": "^4.17.16",
-    "@types/node": "^22.13.11"
-  },
-  "dependencies": {
-    "lucide-react": "^0.483.0"
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:1c5f6ae8224094062d9e925c69c5cb39198e392bc4d0f2112b116bb53c32670c
+size 151
